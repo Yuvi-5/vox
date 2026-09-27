@@ -1,0 +1,18 @@
+# personal data: never commit
+windows/config.json
+windows/google_client.json
+client_secret*.json
+*.log
+# build output
+android/build/
+windows/build/
+windows/dist/
+windows/Output/
+windows/*.spec
+__pycache__/
+*.pyc
+/Vox.apk
+windows/setup_and_run.bat
+windows/run_debug.bat
+# Windows-only repo for now: the Android app is kept locally
+android/

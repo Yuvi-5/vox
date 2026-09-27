@@ -1,0 +1,12 @@
+:root{--bg:#F7F7F5;--panel:#fff;--text:#1B1B1F;--muted:#6B6B73;--line:#E4E4E0;--accent:#2F5BEA}
+@media (prefers-color-scheme:dark){:root{--bg:#161618;--panel:#1E1E21;--text:#EDEDEF;--muted:#9A9AA3;--line:#2C2C31;--accent:#6E8BFF}}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:16px/1.65 "Segoe UI",system-ui,sans-serif}
+main{max-width:760px;margin:0 auto;padding:48px 20px 80px}
+.brand{display:flex;align-items:center;gap:12px;font-weight:700;font-size:22px;margin-bottom:28px}
+.logo{width:40px;height:40px;border-radius:11px;background:var(--accent);display:grid;place-items:center}
+h1{font-size:32px;line-height:1.2;margin:0 0 12px;letter-spacing:-.01em}h2{font-size:19px;margin:34px 0 8px}
+p,li{color:var(--text)}.muted{color:var(--muted)}a{color:var(--accent)}
+.btn{display:inline-block;background:var(--accent);color:#fff;text-decoration:none;font-weight:600;padding:11px 18px;border-radius:10px;margin:8px 8px 0 0}
+.btn.ghost{background:transparent;color:var(--text);border:1px solid var(--line)}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:20px 22px;margin-top:14px}
+footer{margin-top:48px;color:var(--muted);font-size:14px}

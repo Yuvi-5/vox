@@ -1,0 +1,13 @@
+requests
+sounddevice
+numpy
+pynput
+pyperclip
+psutil
+pystray
+Pillow
+pywebview
+soundcard
+icalendar
+recurring-ical-events
+tzdata

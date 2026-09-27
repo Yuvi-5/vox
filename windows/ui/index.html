@@ -1,0 +1,700 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Vox</title>
+<style>
+:root {
+  --bg: #F7F7F5; --panel: #FFFFFF; --side: #EFEFEC; --text: #1B1B1F; --muted: #6B6B73;
+  --line: #E4E4E0; --accent: #2F5BEA; --accent-soft: #E6ECFD; --danger: #D93025; --ok: #1E8E3E;
+  --radius: 12px; --shadow: 0 1px 2px rgba(0,0,0,.05), 0 2px 8px rgba(0,0,0,.04);
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #161618; --panel: #1E1E21; --side: #111113; --text: #EDEDEF; --muted: #9A9AA3;
+    --line: #2C2C31; --accent: #6E8BFF; --accent-soft: #232B47; --danger: #FF6B5E; --ok: #4CC36B;
+    --shadow: none;
+  }
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; }
+body { font: 14px/1.5 "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif; color: var(--text); background: var(--bg);
+       display: grid; grid-template-columns: 220px 1fr; overflow: hidden; }
+aside { background: var(--side); padding: 22px 14px; display: flex; flex-direction: column; gap: 4px; }
+.brand { display: flex; align-items: center; gap: 10px; font-weight: 650; font-size: 18px; padding: 0 10px 18px; }
+.logo { width: 30px; height: 30px; border-radius: 9px; background: var(--accent); display: grid; place-items: center; }
+nav button { all: unset; display: flex; align-items: center; gap: 10px; padding: 9px 12px; border-radius: 9px; cursor: pointer; color: var(--muted); font-weight: 500; }
+nav button:hover { background: var(--panel); color: var(--text); }
+nav button.active { background: var(--panel); color: var(--text); box-shadow: var(--shadow); }
+nav svg { width: 17px; height: 17px; flex: none; }
+.side-foot { margin-top: auto; padding: 12px; font-size: 12px; color: var(--muted); }
+main { overflow-y: auto; padding: 34px 44px 60px; }
+h1 { font-size: 24px; font-weight: 650; margin: 0 0 4px; letter-spacing: -.01em; }
+.sub { color: var(--muted); margin: 0 0 26px; }
+h2 { font-size: 15px; font-weight: 600; margin: 30px 0 12px; }
+.page { display: none; max-width: 880px; }
+.page.active { display: block; }
+.hint { display: flex; align-items: center; gap: 12px; background: var(--accent-soft); border-radius: var(--radius); padding: 14px 18px; margin-bottom: 22px; }
+kbd { font: 600 12px "Segoe UI", sans-serif; background: var(--panel); border: 1px solid var(--line); border-bottom-width: 2px; border-radius: 6px; padding: 2px 7px; }
+.stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
+.card { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 16px 18px; box-shadow: var(--shadow); }
+.stat .n { font-size: 24px; font-weight: 650; font-variant-numeric: tabular-nums; }
+.stat .l { color: var(--muted); font-size: 12.5px; }
+.day { color: var(--muted); font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; margin: 22px 0 8px; }
+.entry { display: grid; grid-template-columns: 64px 1fr auto; gap: 14px; padding: 12px 16px; border-bottom: 1px solid var(--line); align-items: start; }
+.entry:last-child { border-bottom: 0; }
+.entry .time { color: var(--muted); font-size: 12.5px; padding-top: 1px; font-variant-numeric: tabular-nums; }
+.entry .app { color: var(--muted); font-size: 12px; margin-top: 3px; }
+.entry .txt { white-space: pre-wrap; word-break: break-word; }
+.entry .acts { display: flex; gap: 4px; opacity: 0; transition: opacity .15s; }
+.entry:hover .acts { opacity: 1; }
+.list { padding: 0; overflow: hidden; }
+.icon-btn { all: unset; cursor: pointer; width: 28px; height: 28px; border-radius: 7px; display: grid; place-items: center; color: var(--muted); }
+.icon-btn:hover { background: var(--bg); color: var(--text); }
+.icon-btn svg { width: 15px; height: 15px; }
+.empty { color: var(--muted); padding: 28px; text-align: center; }
+.row { display: flex; gap: 10px; align-items: center; }
+input[type=text], input[type=password], select {
+  font: inherit; color: var(--text); background: var(--panel); border: 1px solid var(--line); border-radius: 9px; padding: 8px 11px; outline: none; min-width: 0;
+}
+input:focus, select:focus { border-color: var(--accent); }
+.grow { flex: 1; }
+.btn { all: unset; cursor: pointer; padding: 8px 14px; border-radius: 9px; background: var(--accent); color: #fff; font-weight: 600; font-size: 13px; }
+.btn.ghost { background: transparent; color: var(--text); border: 1px solid var(--line); }
+.btn:hover { filter: brightness(1.06); }
+.chips { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
+.chip { display: inline-flex; align-items: center; gap: 6px; background: var(--panel); border: 1px solid var(--line); border-radius: 999px; padding: 5px 6px 5px 13px; }
+.chip button { all: unset; cursor: pointer; width: 20px; height: 20px; border-radius: 50%; display: grid; place-items: center; color: var(--muted); }
+.chip button:hover { background: var(--bg); color: var(--danger); }
+table { width: 100%; border-collapse: collapse; }
+td { padding: 10px 16px; border-bottom: 1px solid var(--line); }
+tr:last-child td { border-bottom: 0; }
+td.arrow { color: var(--muted); width: 24px; padding: 0; text-align: center; }
+.setting { display: flex; align-items: center; gap: 16px; padding: 16px 18px; border-bottom: 1px solid var(--line); }
+.setting:last-child { border-bottom: 0; }
+.setting .t { font-weight: 550; }
+.setting .d { color: var(--muted); font-size: 12.5px; }
+.setting > div:first-child { flex: 1; }
+.switch { position: relative; width: 40px; height: 22px; flex: none; }
+.switch input { opacity: 0; width: 0; height: 0; }
+.switch span { position: absolute; inset: 0; background: var(--line); border-radius: 999px; cursor: pointer; transition: .2s; }
+.switch span::after { content: ""; position: absolute; width: 16px; height: 16px; left: 3px; top: 3px; background: #fff; border-radius: 50%; transition: .2s; box-shadow: 0 1px 2px rgba(0,0,0,.2); }
+.switch input:checked + span { background: var(--accent); }
+.switch input:checked + span::after { transform: translateX(18px); }
+.status { font-size: 12.5px; font-weight: 600; }
+.status.ok { color: var(--ok); } .status.bad { color: var(--danger); }
+.style-tag { font-size: 12px; color: var(--muted); }
+.live { display: flex; align-items: center; gap: 14px; }
+.rec-dot { width: 10px; height: 10px; border-radius: 50%; background: var(--danger); animation: pulse 1.4s infinite; flex: none; }
+@keyframes pulse { 50% { opacity: .35; } }
+.timer { font-variant-numeric: tabular-nums; font-weight: 650; font-size: 20px; }
+.transcript { max-height: 280px; overflow-y: auto; margin-top: 14px; border-top: 1px solid var(--line); padding-top: 10px; font-size: 13.5px; }
+.transcript p { margin: 0 0 8px; }
+.transcript .who { font-weight: 600; margin-right: 6px; }
+.transcript .who.me { color: var(--accent); }
+.transcript .ts { color: var(--muted); font-size: 12px; margin-right: 6px; font-variant-numeric: tabular-nums; }
+.catchup { background: var(--accent-soft); border-radius: 10px; padding: 12px 14px; margin-top: 12px; white-space: pre-wrap; }
+.ev { display: grid; grid-template-columns: 92px 1fr auto; gap: 14px; padding: 12px 16px; border-bottom: 1px solid var(--line); align-items: center; }
+.ev:last-child { border-bottom: 0; }
+.ev .when { color: var(--muted); font-size: 12.5px; font-variant-numeric: tabular-nums; }
+.ev .people { color: var(--muted); font-size: 12.5px; }
+.ev.now { background: var(--accent-soft); }
+.mt { cursor: pointer; }
+.mt:hover { background: var(--bg); }
+.md h1 { font-size: 21px; margin: 0 0 6px; } .md h2 { font-size: 15px; margin: 22px 0 8px; }
+.md p, .md li { margin: 4px 0; } .md ul { padding-left: 20px; margin: 4px 0; }
+.md li.task { list-style: none; margin-left: -20px; }
+.md em { color: var(--muted); }
+.back { all: unset; cursor: pointer; color: var(--muted); font-size: 13px; margin-bottom: 12px; display: inline-block; }
+.back:hover { color: var(--text); }
+.page.wide { max-width: none; }
+#notes.active { display: grid; grid-template-columns: 290px 1fr; gap: 0; height: 100vh; margin: -34px -44px -60px; }
+.nl { border-right: 1px solid var(--line); padding: 22px 16px; overflow-y: auto; }
+.nr { overflow-y: auto; padding: 30px 40px 60px; }
+.ask { display: flex; align-items: center; gap: 8px; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 2px 10px; }
+.ask svg { width: 16px; height: 16px; color: var(--accent); flex: none; }
+.ask input { border: 0 !important; background: transparent; flex: 1; padding: 8px 0 !important; }
+.nl-h { display: flex; justify-content: space-between; align-items: center; color: var(--muted); font-size: 11.5px; font-weight: 650; text-transform: uppercase; letter-spacing: .05em; margin: 18px 4px 6px; }
+.link { all: unset; cursor: pointer; color: var(--accent); font-size: 12px; text-transform: none; letter-spacing: 0; font-weight: 600; }
+.mi { padding: 9px 10px; border-radius: 9px; cursor: pointer; }
+.mi:hover { background: var(--panel); }
+.mi.sel { background: var(--panel); box-shadow: var(--shadow); }
+.mi .t { font-weight: 550; font-size: 13.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.mi .s { color: var(--muted); font-size: 12px; display: flex; align-items: center; gap: 6px; margin-top: 2px; }
+.faces { display: inline-flex; margin-left: auto; }
+.faces .av { width: 18px; height: 18px; font-size: 9px; margin-left: -5px; border: 1.5px solid var(--bg); }
+.av { width: 30px; height: 30px; border-radius: 50%; display: inline-grid; place-items: center; color: #fff; font-weight: 650; font-size: 12px; flex: none; }
+.livebox { margin-top: 12px; border-radius: 10px; padding: 10px 12px; background: var(--panel); border: 1px solid var(--line); cursor: pointer; display: flex; gap: 10px; align-items: center; }
+.startbtn { width: 100%; margin-top: 12px; text-align: center; box-sizing: border-box; }
+.up { padding: 7px 10px; border-radius: 9px; font-size: 13px; display: flex; gap: 10px; align-items: baseline; }
+.up .w { color: var(--muted); font-size: 12px; width: 62px; flex: none; font-variant-numeric: tabular-nums; }
+.up.now { background: var(--accent-soft); }
+.mh-title { font-size: 24px; font-weight: 650; outline: none; border-radius: 6px; margin: 0 -6px; padding: 0 6px; letter-spacing: -.01em; }
+.mh-title:focus { background: var(--panel); }
+.people-row { display: flex; flex-wrap: wrap; gap: 8px; margin: 14px 0 18px; }
+.pchip { display: inline-flex; align-items: center; gap: 7px; background: var(--panel); border: 1px solid var(--line); border-radius: 999px; padding: 3px 11px 3px 3px; font-size: 12.5px; }
+.pchip .av { width: 22px; height: 22px; font-size: 10px; }
+.tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--line); margin-bottom: 18px; }
+.tabs button { all: unset; cursor: pointer; padding: 9px 12px; color: var(--muted); font-weight: 550; border-bottom: 2px solid transparent; margin-bottom: -1px; }
+.tabs button.on { color: var(--text); border-color: var(--accent); }
+.blk { display: grid; grid-template-columns: 30px 1fr; gap: 12px; padding: 10px 0; }
+.blk .nm { font-weight: 600; font-size: 13px; }
+.blk .tm { color: var(--muted); font-size: 12px; margin-left: 8px; font-variant-numeric: tabular-nums; cursor: pointer; }
+.blk p { margin: 3px 0 0; }
+.blk.flash { background: var(--accent-soft); border-radius: 10px; }
+.likely { font-size: 10.5px; color: var(--muted); border: 1px solid var(--line); border-radius: 999px; padding: 0 6px; margin-left: 6px; font-weight: 500; }
+mark { background: #FFE58A; color: inherit; border-radius: 3px; }
+.md li.task { cursor: pointer; list-style: none; margin-left: -20px; display: flex; gap: 8px; align-items: baseline; }
+.md li.task.done span { text-decoration: line-through; color: var(--muted); }
+.md li.task input { accent-color: var(--accent); }
+textarea.mynotes { width: 100%; min-height: 380px; font: inherit; color: var(--text); background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 16px; resize: vertical; outline: none; line-height: 1.6; }
+.cite { all: unset; cursor: pointer; color: var(--accent); font-weight: 600; font-size: 12px; background: var(--accent-soft); border-radius: 5px; padding: 0 5px; }
+.empty-pane { height: 70%; display: grid; place-items: center; text-align: center; color: var(--muted); }
+#toast { position: fixed; bottom: 22px; left: 50%; transform: translate(-50%, 20px); background: var(--text); color: var(--bg); padding: 8px 16px; border-radius: 999px; font-size: 13px; opacity: 0; transition: .2s; pointer-events: none; }
+#toast.show { opacity: 1; transform: translate(-50%, 0); }
+</style>
+</head>
+<body>
+<aside>
+  <div class="brand"><div class="logo"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round"><rect x="9" y="3" width="6" height="11" rx="3" fill="#fff" stroke="none"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg></div>Vox</div>
+  <nav>
+    <button data-page="home" class="active"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 11l9-7 9 7v9a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"/></svg>Home</button>
+    <button data-page="notes"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="3" width="16" height="18" rx="2"/><path d="M8 8h8M8 12h8M8 16h5"/></svg>Notes</button>
+    <button data-page="dictionary"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h11a3 3 0 0 1 3 3v13H7a3 3 0 0 1-3-3z"/><path d="M4 17a3 3 0 0 1 3-3h11"/></svg>Dictionary</button>
+    <button data-page="styles"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 7h10M4 12h16M4 17h7"/></svg>Styles</button>
+    <button data-page="settings"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>Settings</button>
+  </nav>
+  <div class="side-foot">Groq free plan<br>Speech: whisper-large-v3-turbo</div>
+</aside>
+
+<main>
+  <!-- HOME -->
+  <section class="page active" id="home">
+    <h1 id="greet">Welcome back</h1>
+    <p class="sub">Your dictations, stats and history.</p>
+    <div class="card" id="welcome" style="display:none;margin-bottom:22px;border-color:var(--accent)">
+      <div style="font-weight:650;font-size:16px;margin-bottom:4px">Welcome to Vox. One step to start.</div>
+      <div class="style-tag" style="margin-bottom:12px">Vox uses Groq's free speech and AI models with <b>your own</b> free key (no card needed), so your usage limits are yours alone.
+        Sign in at console.groq.com, open <b>API Keys</b>, create a key and paste it here.</div>
+      <div class="row"><input type="password" id="w-key" class="grow" placeholder="gsk_..."><button class="btn ghost" id="w-get">Get a free key</button><button class="btn" id="w-save">Save key</button></div>
+      <div class="status" id="w-status" style="margin-top:8px"></div>
+    </div>
+    <div class="hint">Hold <span id="hk-keys"></span> in any app, speak, then release. Double-tap it for hands-free.</div>
+    <div class="stats">
+      <div class="card stat"><div class="n" id="s-week">0</div><div class="l">Words this week</div></div>
+      <div class="card stat"><div class="n" id="s-total">0</div><div class="l">Total words</div></div>
+      <div class="card stat"><div class="n" id="s-wpm">0</div><div class="l">Words per minute</div></div>
+      <div class="card stat"><div class="n" id="s-saved">0m</div><div class="l">Time saved vs typing</div></div>
+    </div>
+    <div class="row" style="margin-top:30px"><h2 style="margin:0" class="grow">History</h2>
+      <input type="text" id="search" placeholder="Search" style="width:220px"></div>
+    <div id="history"></div>
+  </section>
+
+  <!-- NOTES -->
+  <section class="page wide" id="notes">
+    <div class="nl">
+      <div class="ask"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3l1.8 4.6L18 9l-4.2 1.4L12 15l-1.8-4.6L6 9l4.2-1.4z"/><path d="M19 15l.8 2 2 .8-2 .8-.8 2-.8-2-2-.8 2-.8z"/></svg>
+        <input type="text" id="ask-q" placeholder="Ask about your meetings"></div>
+      <div id="nl-live"></div>
+      <div class="nl-h">Upcoming <button class="link" id="cal-open">Calendar</button></div>
+      <div id="nl-up"></div>
+      <input type="text" id="m-search" placeholder="Search meetings" style="width:100%;margin:14px 0 4px">
+      <div id="nl-list"></div>
+    </div>
+    <div class="nr" id="nr"></div>
+  </section>
+
+  <!-- DICTIONARY -->
+  <section class="page" id="dictionary">
+    <h1>Dictionary</h1>
+    <p class="sub">Your own words, names and acronyms. Vox sends them to Whisper as spelling hints and to the cleanup model so they come out right every time.</p>
+    <h2 style="margin-top:0">Words</h2>
+    <div class="card">
+      <div class="row"><input type="text" id="term" class="grow" placeholder="Add a word, name or acronym (e.g. LoomXR)"><button class="btn" id="add-term">Add</button></div>
+      <div class="chips" id="terms"></div>
+    </div>
+    <h2>People</h2>
+    <p class="sub" style="margin-top:-6px">Names of people you mention or write to, spelled the way they spell them.</p>
+    <div class="card">
+      <div class="row"><input type="text" id="person" class="grow" placeholder="Add a name (e.g. Dr. Arghavan Asad)"><button class="btn" id="add-person">Add</button></div>
+      <div class="chips" id="people"></div>
+    </div>
+    <h2>Replacements</h2>
+    <p class="sub" style="margin-top:-6px">When Whisper keeps getting something wrong, force the fix.</p>
+    <div class="card">
+      <div class="row"><input type="text" id="wrong" class="grow" placeholder="When it hears (e.g. lume x r)"><input type="text" id="right" class="grow" placeholder="Write (e.g. LoomXR)"><button class="btn" id="add-repl">Add</button></div>
+    </div>
+    <div class="card list" style="margin-top:12px"><table id="repls"></table></div>
+  </section>
+
+  <!-- STYLES -->
+  <section class="page" id="styles">
+    <h1>Styles</h1>
+    <p class="sub">Tone of the cleaned text in each app. Vox detects the app you are typing in.</p>
+    <div class="card setting" style="border:1px solid var(--line)">
+      <div><div class="t">Default style</div><div class="d">Used for apps not listed below.</div></div>
+      <select id="default-style"></select>
+    </div>
+    <h2>Per app</h2>
+    <div class="card list"><table id="app-styles"></table></div>
+    <div class="row" style="margin-top:12px">
+      <input type="text" id="new-app" class="grow" list="known-apps" placeholder="App exe (e.g. outlook.exe). Apps you dictated into are suggested.">
+      <datalist id="known-apps"></datalist>
+      <select id="new-style"></select><button class="btn" id="add-app">Add</button>
+    </div>
+  </section>
+
+  <!-- SETTINGS -->
+  <section class="page" id="settings">
+    <h1>Settings</h1>
+    <p class="sub">Changes apply within a second. No restart needed.</p>
+    <div class="card list">
+      <div class="setting"><div><div class="t">Groq API key</div><div class="d">Free at console.groq.com/keys. Stored only on this PC.</div></div>
+        <input type="password" id="key" style="width:260px"><button class="btn ghost" id="test-key">Test</button><span class="status" id="key-status"></span></div>
+      <div class="setting"><div><div class="t">Dictation shortcut</div><div class="d">Hold to talk and release to insert. Double-tap for hands-free, then press once to finish (Esc cancels).</div></div><select id="hotkey"></select></div>
+      <div class="setting"><div><div class="t">Your name</div><div class="d">Used to label your lines in meeting notes.</div></div><input type="text" id="your-name" style="width:220px" placeholder="e.g. Minhaj"></div>
+      <div class="setting"><div><div class="t">Your calendar email</div><div class="d">So you are not listed as an attendee in your own meetings.</div></div><input type="text" id="my-email" style="width:220px" placeholder="you@gmail.com"></div>
+      <div class="setting"><div><div class="t">Start notes automatically</div><div class="d">When a calendar meeting with other people starts. Off means Vox reminds you instead.</div></div><label class="switch"><input type="checkbox" id="auto-notes"><span></span></label></div>
+      <div class="setting"><div><div class="t">Language</div><div class="d">Auto detect can switch language on short phrases. Pick one to lock it.</div></div>
+        <select id="language"><option value="">Auto detect</option><option value="en">English</option><option value="ur">Urdu</option><option value="hi">Hindi</option><option value="ar">Arabic</option><option value="fr">French</option><option value="es">Spanish</option></select></div>
+      <div class="setting"><div><div class="t">AI cleanup</div><div class="d">Removes fillers, applies self-corrections, fixes punctuation and formats lists.</div></div><label class="switch"><input type="checkbox" id="cleanup"><span></span></label></div>
+      <div class="setting"><div><div class="t">Keep dictation on the clipboard</div><div class="d">After pasting, your text stays copied so you can paste it again with Ctrl + V.</div></div><label class="switch"><input type="checkbox" id="keep-clip"><span></span></label></div>
+      <div class="setting"><div><div class="t">Start Vox with Windows</div><div class="d">Runs in the tray after you sign in.</div></div><label class="switch"><input type="checkbox" id="autostart"><span></span></label></div>
+    </div>
+    <h2>Advanced</h2>
+    <div class="card list">
+      <div class="setting"><div><div class="t">Speech model</div></div><input type="text" id="stt" style="width:280px"></div>
+      <div class="setting"><div><div class="t">Cleanup model</div></div><input type="text" id="llm" style="width:280px"></div>
+      <div class="setting"><div><div class="t">Data folder</div><div class="d" id="data-dir"></div></div><button class="btn ghost" id="open-data">Open</button></div>
+      <div class="setting"><div><div class="t">History</div><div class="d">Delete every saved dictation.</div></div><button class="btn ghost" id="clear-hist" style="color:var(--danger)">Clear history</button></div>
+    </div>
+  </section>
+</main>
+<div id="toast"></div>
+
+<script>
+const STYLES = [
+  ["neutral", "Neutral"], ["formal", "Formal"], ["casual", "Casual"], ["very_casual", "Very casual"], ["raw", "Raw (no cleanup)"]
+];
+const ICON_COPY = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a1 1 0 0 1 1-1h10"/></svg>';
+const ICON_DEL = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/></svg>';
+const ICON_X = '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>';
+let S = null;
+const $ = (id) => document.getElementById(id);
+const api = () => window.pywebview.api;
+const esc = (s) => String(s ?? "").replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+
+function toast(msg) { const t = $("toast"); t.textContent = msg; t.classList.add("show"); clearTimeout(t._h); t._h = setTimeout(() => t.classList.remove("show"), 1600); }
+async function save(part, msg = "Saved") { Object.assign(S.config, part); await api().save_config(part); toast(msg); }
+
+document.querySelectorAll("nav button").forEach(b => b.onclick = () => {
+  document.querySelectorAll("nav button").forEach(x => x.classList.toggle("active", x === b));
+  document.querySelectorAll(".page").forEach(p => p.classList.toggle("active", p.id === b.dataset.page));
+  if (b.dataset.page === "home") refresh();
+  if (b.dataset.page === "notes") enterNotes();
+});
+
+function styleOptions(sel, value) { sel.innerHTML = STYLES.map(([v, l]) => `<option value="${v}">${l}</option>`).join(""); sel.value = value || "neutral"; }
+function fmt(n) { return n >= 10000 ? (n / 1000).toFixed(1) + "k" : n.toLocaleString(); }
+
+function renderWelcome() {
+  $("welcome").style.display = S.config.api_key ? "none" : "block";
+}
+$("w-get").onclick = () => api().open_url("https://console.groq.com/keys");
+$("w-save").onclick = async () => {
+  const k = $("w-key").value.trim(), st = $("w-status");
+  if (!k) return;
+  st.className = "status"; st.textContent = "Checking…";
+  const ok = await api().check_key(k);
+  if (ok === false) { st.className = "status bad"; st.textContent = "Groq rejected that key. Copy it again."; return; }
+  await save({ api_key: k }, "Key saved");
+  st.textContent = ""; renderWelcome(); renderSettings();
+};
+function renderHome() {
+  const h = new Date().getHours();
+  $("greet").textContent = h < 12 ? "Good morning" : h < 18 ? "Good afternoon" : "Good evening";
+  const hk = S.hotkeys.find(x => x.id === S.hotkey_id);
+  $("hk-keys").innerHTML = (hk ? hk.label : S.config.hotkey.join(" + ")).split(" + ").map(k => `<kbd>${esc(k)}</kbd>`).join(" + ");
+  $("s-week").textContent = fmt(S.stats.week_words);
+  $("s-total").textContent = fmt(S.stats.total_words);
+  $("s-wpm").textContent = S.stats.wpm || "–";
+  const m = S.stats.saved_min; $("s-saved").textContent = m >= 60 ? `${Math.floor(m / 60)}h ${m % 60}m` : `${m}m`;
+  renderHistory();
+}
+
+function renderHistory() {
+  const q = $("search").value.trim().toLowerCase();
+  const items = S.history.filter(e => !q || (e.text || "").toLowerCase().includes(q));
+  if (!items.length) { $("history").innerHTML = `<div class="card empty">${q ? "No matches." : "Nothing yet. Hold your shortcut in any app and start talking."}</div>`; return; }
+  let html = "", day = "";
+  const today = new Date().toDateString(), yest = new Date(Date.now() - 864e5).toDateString();
+  for (const e of items) {
+    const d = new Date(e.t * 1000), ds = d.toDateString();
+    if (ds !== day) {
+      if (day) html += "</div>";
+      day = ds;
+      html += `<div class="day">${ds === today ? "Today" : ds === yest ? "Yesterday" : d.toLocaleDateString(undefined, { weekday: "long", month: "short", day: "numeric" })}</div><div class="card list">`;
+    }
+    html += `<div class="entry"><div class="time">${d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}</div>
+      <div><div class="txt">${esc(e.text)}</div><div class="app">${esc((e.app || "").replace(/\.exe$/i, ""))} · ${e.words} words</div></div>
+      <div class="acts"><button class="icon-btn" title="Copy" data-copy="${e.t}">${ICON_COPY}</button><button class="icon-btn" title="Delete" data-del="${e.t}">${ICON_DEL}</button></div></div>`;
+  }
+  $("history").innerHTML = html + "</div>";
+}
+$("search").oninput = renderHistory;
+$("history").onclick = async (ev) => {
+  const c = ev.target.closest("[data-copy]"), d = ev.target.closest("[data-del]");
+  if (c) { const e = S.history.find(x => String(x.t) === c.dataset.copy); await api().copy(e.text); toast("Copied"); }
+  if (d) { await api().delete_history(Number(d.dataset.del)); S.history = S.history.filter(x => String(x.t) !== d.dataset.del); renderHistory(); }
+};
+
+// ---------- dictionary
+function dictLists() {
+  const terms = [], repl = [];
+  for (const line of S.config.dictionary || []) {
+    if (line.includes("=>")) { const [w, r] = line.split("=>").map(s => s.trim()); repl.push([w, r]); } else if (line.trim()) terms.push(line.trim());
+  }
+  return { terms, repl };
+}
+function setDict(terms, repl) { return save({ dictionary: [...terms, ...repl.map(([w, r]) => `${w} => ${r}`)] }); }
+function renderDict() {
+  const { terms, repl } = dictLists();
+  $("terms").innerHTML = terms.length ? terms.map((t, i) => `<span class="chip">${esc(t)}<button data-i="${i}" title="Remove">${ICON_X}</button></span>`).join("") : '<span class="style-tag">No words yet.</span>';
+  $("repls").innerHTML = repl.length ? repl.map(([w, r], i) => `<tr><td>${esc(w)}</td><td class="arrow">→</td><td><b>${esc(r)}</b></td><td style="width:40px"><button class="icon-btn" data-r="${i}">${ICON_DEL}</button></td></tr>`).join("") : '<tr><td class="empty">No replacements yet.</td></tr>';
+}
+$("add-term").onclick = async () => { const v = $("term").value.trim(); if (!v) return; const { terms, repl } = dictLists(); if (!terms.includes(v)) terms.push(v); $("term").value = ""; await setDict(terms, repl); renderDict(); };
+$("term").onkeydown = (e) => { if (e.key === "Enter") $("add-term").click(); };
+$("terms").onclick = async (e) => { const b = e.target.closest("button"); if (!b) return; const { terms, repl } = dictLists(); terms.splice(+b.dataset.i, 1); await setDict(terms, repl); renderDict(); };
+$("add-repl").onclick = async () => { const w = $("wrong").value.trim(), r = $("right").value.trim(); if (!w || !r) return; const { terms, repl } = dictLists(); repl.push([w, r]); $("wrong").value = $("right").value = ""; await setDict(terms, repl); renderDict(); };
+$("right").onkeydown = (e) => { if (e.key === "Enter") $("add-repl").click(); };
+function renderPeople() {
+  const p = S.config.people || [];
+  $("people").innerHTML = p.length ? p.map((t, i) => `<span class="chip">${esc(t)}<button data-i="${i}" title="Remove">${ICON_X}</button></span>`).join("") : '<span class="style-tag">No names yet.</span>';
+}
+$("add-person").onclick = async () => { const v = $("person").value.trim(); if (!v) return; const p = [...(S.config.people || [])]; if (!p.includes(v)) p.push(v); $("person").value = ""; await save({ people: p }); renderPeople(); };
+$("person").onkeydown = (e) => { if (e.key === "Enter") $("add-person").click(); };
+$("people").onclick = async (e) => { const b = e.target.closest("button"); if (!b) return; const p = [...(S.config.people || [])]; p.splice(+b.dataset.i, 1); await save({ people: p }, "Removed"); renderPeople(); };
+$("repls").onclick = async (e) => { const b = e.target.closest("[data-r]"); if (!b) return; const { terms, repl } = dictLists(); repl.splice(+b.dataset.r, 1); await setDict(terms, repl); renderDict(); };
+
+// ---------- styles
+function renderStyles() {
+  styleOptions($("default-style"), S.config.default_style);
+  styleOptions($("new-style"), "casual");
+  const m = S.config.app_styles || {};
+  const rows = Object.keys(m).sort();
+  $("app-styles").innerHTML = rows.length ? rows.map(a => `<tr><td>${esc(a.replace(/\.exe$/i, ""))} <span class="style-tag">${esc(a)}</span></td>
+    <td style="width:200px"><select data-app="${esc(a)}">${STYLES.map(([v, l]) => `<option value="${v}" ${m[a] === v ? "selected" : ""}>${l}</option>`).join("")}</select></td>
+    <td style="width:40px"><button class="icon-btn" data-rm="${esc(a)}">${ICON_DEL}</button></td></tr>`).join("") : '<tr><td class="empty">No apps yet.</td></tr>';
+  $("known-apps").innerHTML = S.apps.filter(a => !m[a]).map(a => `<option value="${esc(a)}">`).join("");
+}
+$("default-style").onchange = (e) => save({ default_style: e.target.value });
+$("app-styles").onchange = (e) => { const a = e.target.dataset.app; if (!a) return; save({ app_styles: { ...S.config.app_styles, [a]: e.target.value } }); };
+$("app-styles").onclick = async (e) => { const b = e.target.closest("[data-rm]"); if (!b) return; const m = { ...S.config.app_styles }; delete m[b.dataset.rm]; await save({ app_styles: m }, "Removed"); renderStyles(); };
+$("add-app").onclick = async () => { let a = $("new-app").value.trim().toLowerCase(); if (!a) return; if (!a.endsWith(".exe")) a += ".exe"; $("new-app").value = ""; await save({ app_styles: { ...S.config.app_styles, [a]: $("new-style").value } }); renderStyles(); };
+
+// ---------- settings
+function renderSettings() {
+  const c = S.config;
+  $("key").value = c.api_key || "";
+  $("hotkey").innerHTML = S.hotkeys.map(h => `<option value="${h.id}">${h.label}</option>`).join("") + (S.hotkey_id === "custom" ? `<option value="custom">Custom (config.json)</option>` : "");
+  $("hotkey").value = S.hotkey_id;
+  $("language").value = c.language || "";
+  $("cleanup").checked = c.cleanup !== false;
+  $("autostart").checked = S.autostart;
+  $("stt").value = c.stt_model || ""; $("llm").value = c.llm_model || "";
+  $("data-dir").textContent = S.data_dir;
+  $("your-name").value = c.your_name || ""; $("my-email").value = c.my_email || "";
+  $("auto-notes").checked = !!c.auto_notes;
+  $("keep-clip").checked = c.keep_clipboard !== false;
+}
+$("key").onchange = () => { save({ api_key: $("key").value.trim() }); $("key-status").textContent = ""; };
+$("test-key").onclick = async () => {
+  const s = $("key-status"); s.className = "status"; s.textContent = "Checking…";
+  const ok = await api().check_key($("key").value);
+  s.className = "status " + (ok ? "ok" : "bad"); s.textContent = ok === null ? "No connection" : ok ? "Key works" : "Key rejected";
+};
+$("hotkey").onchange = async (e) => { const label = await api().set_hotkey(e.target.value); if (label) { S.hotkey_id = e.target.value; toast("Shortcut: " + label); } };
+$("language").onchange = (e) => save({ language: e.target.value });
+$("cleanup").onchange = (e) => save({ cleanup: e.target.checked });
+$("autostart").onchange = async (e) => { S.autostart = await api().set_autostart(e.target.checked); e.target.checked = S.autostart; toast(S.autostart ? "Vox will start with Windows" : "Autostart off"); };
+$("stt").onchange = (e) => save({ stt_model: e.target.value.trim() });
+$("llm").onchange = (e) => save({ llm_model: e.target.value.trim() });
+$("your-name").onchange = (e) => save({ your_name: e.target.value.trim() });
+$("my-email").onchange = (e) => save({ my_email: e.target.value.trim() });
+$("keep-clip").onchange = (e) => save({ keep_clipboard: e.target.checked });
+$("auto-notes").onchange = (e) => save({ auto_notes: e.target.checked });
+$("open-data").onclick = () => api().open_data_folder();
+$("clear-hist").onclick = async () => { await api().clear_history(); await refresh(); toast("History cleared"); };
+
+
+// ---------- notes (two-pane, like a notes app: list on the left, meeting on the right)
+let MS = null, CAL = null, ML = [], notesTimer = null, SEL = null, TAB = "summary", DET = null, RIGHT = "empty";
+const clock = (s) => { s = Math.max(0, s | 0); const h = Math.floor(s / 3600), m = Math.floor(s / 60) % 60, x = s % 60; return (h ? h + ":" + String(m).padStart(2, "0") : m) + ":" + String(x).padStart(2, "0"); };
+const hm = (t) => new Date(t * 1000).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+function dayLabel(t) { const d = new Date(t * 1000), ds = d.toDateString(); if (ds === new Date().toDateString()) return "Today"; if (ds === new Date(Date.now() - 864e5).toDateString()) return "Yesterday"; if (ds === new Date(Date.now() + 864e5).toDateString()) return "Tomorrow"; return d.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" }); }
+const COLORS = ["#2F5BEA", "#0E9F6E", "#D97706", "#C2410C", "#7C3AED", "#DB2777", "#0891B2", "#4D7C0F"];
+function colorOf(name) { let h = 0; for (const c of name || "?") h = (h * 31 + c.charCodeAt(0)) >>> 0; return COLORS[h % COLORS.length]; }
+function initials(name) { const p = (name || "?").replace(/^(dr|prof)\.?\s+/i, "").split(/\s+/).filter(Boolean); return ((p[0] || "?")[0] + (p.length > 1 ? p[p.length - 1][0] : "")).toUpperCase(); }
+const av = (name, cls = "") => `<span class="av ${cls}" style="background:${name === "Others" ? "#8A8A93" : colorOf(name)}" title="${esc(name)}">${esc(name === "Others" ? "?" : initials(name))}</span>`;
+
+// ----- left pane
+function renderLeftLive() {
+  const m = MS || {}, el = $("nl-live");
+  if (m.active) {
+    el.innerHTML = `<div class="livebox" id="go-live"><span class="rec-dot"></span><div class="grow"><div style="font-weight:600;font-size:13px">${esc(m.title || "Recording")}</div><div class="style-tag">Tap to view live transcript</div></div><span class="timer" style="font-size:14px">${clock(m.elapsed)}</span></div>`;
+    $("go-live").onclick = () => { SEL = null; RIGHT = "live"; renderRight(); renderList(); };
+  } else if (m.processing) {
+    el.innerHTML = `<div class="livebox"><span class="rec-dot" style="background:var(--accent)"></span><div class="style-tag">Writing notes…</div></div>`;
+  } else if (m.error && !("active" in m)) {
+    el.innerHTML = `<div class="style-tag" style="margin-top:12px">${esc(m.error)}</div>`;
+  } else {
+    const cur = CAL && CAL.current;
+    el.innerHTML = `<button class="btn startbtn" id="start-meet">${cur ? "Take notes: " + esc(cur.title) : "Start notes"}</button>`;
+    $("start-meet").onclick = () => { if (cur) startMeeting(cur.uid); else { SEL = null; RIGHT = "new"; renderList(); renderRight(); } };
+  }
+}
+function renderUpcoming() {
+  const el = $("nl-up");
+  if (!CAL || !CAL.connected) { el.innerHTML = `<div class="style-tag" style="padding:0 4px">Connect your calendar to see meetings and attendee names. <button class="link" id="cal-open2">Connect</button></div>`; $("cal-open2").onclick = openCalendar; return; }
+  const now = Date.now() / 1000;
+  const evs = (CAL.events || []).filter(e => e.end > now).slice(0, 4);
+  el.innerHTML = evs.length ? evs.map(e => `<div class="up ${e.start - 300 <= now && now <= e.end ? "now" : ""}"><span class="w">${dayLabel(e.start) === "Today" ? hm(e.start) : dayLabel(e.start)}</span><span>${esc(e.title)}</span></div>`).join("") : '<div class="style-tag" style="padding:0 4px">Nothing coming up.</div>';
+}
+function renderList() {
+  const q = $("m-search").value.trim().toLowerCase();
+  const items = ML.filter(m => !q || (m.title + " " + (m.attendees || []).join(" ")).toLowerCase().includes(q));
+  let html = "", day = "";
+  for (const m of items) {
+    const d = dayLabel(m.started);
+    if (d !== day) { day = d; html += `<div class="nl-h">${d}</div>`; }
+    const faces = (m.attendees || []).slice(0, 3).map(n => `<span class="av" style="background:${colorOf(n)}" title="${esc(n)}">${esc(initials(n)[0])}</span>`).join("");
+    html += `<div class="mi ${SEL === m.id ? "sel" : ""}" data-mid="${esc(m.id)}"><div class="t">${esc(m.title)}</div><div class="s">${hm(m.started)} · ${Math.max(1, Math.round(m.duration / 60))} min<span class="faces">${faces}</span></div></div>`;
+  }
+  $("nl-list").innerHTML = html || `<div class="style-tag" style="padding:14px 4px">${q ? "No matches." : "No meetings yet."}</div>`;
+  $("nl-list").querySelectorAll("[data-mid]").forEach(r => r.onclick = () => openMeeting(r.dataset.mid));
+}
+$("m-search").oninput = renderList;
+$("cal-open").onclick = () => openCalendar();
+
+// ----- right pane
+function renderRight() {
+  const r = $("nr");
+  if (RIGHT === "live") return renderLive(r);
+  if (RIGHT === "meeting" && DET) return renderMeeting(r);
+  if (RIGHT === "calendar") return renderCalendarPane(r);
+  if (RIGHT === "new") return renderNewMeeting(r);
+  if (RIGHT === "ask") return;   // rendered by ask()
+  r.innerHTML = `<div class="empty-pane"><div><div style="font-size:17px;font-weight:600;color:var(--text);margin-bottom:6px">Your meetings</div>Start notes when a call begins, or pick a meeting on the left.<br>Vox records your mic and your PC's audio. No bot joins the call.</div></div>`;
+}
+
+function blocks(lines, q) {
+  const out = []; let cur = null;
+  for (const l of lines) {
+    if (cur && cur.who === l.who && l.t - cur.end < 90) { cur.text.push(l.text); cur.end = l.t; }
+    else { cur = { who: l.who, likely: l.likely, t: l.t, end: l.t, text: [l.text] }; out.push(cur); }
+  }
+  const hl = (t) => { let s = esc(t); if (q) s = s.replace(new RegExp("(" + q.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + ")", "gi"), "<mark>$1</mark>"); return s; };
+  return out.filter(b => !q || b.text.join(" ").toLowerCase().includes(q.toLowerCase())).map(b =>
+    `<div class="blk" data-t="${b.t}">${av(b.who)}<div><span class="nm">${esc(b.who)}</span>${b.likely ? '<span class="likely">likely</span>' : ""}<span class="tm">${clock(b.t)}</span><p>${hl(b.text.join(" "))}</p></div></div>`).join("");
+}
+
+function renderLive(r) {
+  const m = MS || {};
+  if (!m.active) { RIGHT = "empty"; return renderRight(); }
+  const me = S.config.your_name || "You";
+  const lines = (m.entries || []).map(e => ({ t: e.t, who: e.who === "You" ? me : "Others", text: e.text }));
+  const src = Object.entries(m.sources || {}).filter(([, v]) => v !== "ok").map(([k, v]) => `${k === "You" ? "Mic" : "PC audio"}: ${v}`).join(" · ");
+  const keep = $("live-tr") ? $("live-tr").scrollHeight - $("live-tr").scrollTop - $("live-tr").clientHeight < 40 : true;
+  r.innerHTML = `<div class="row"><span class="rec-dot"></span><div class="mh-title grow">${esc(m.title || "Untitled meeting")}</div><span class="timer">${clock(m.elapsed)}</span></div>
+    <div class="people-row">${[me, ...(m.attendees || [])].map(n => `<span class="pchip">${av(n)}${esc(n)}</span>`).join("")}</div>
+    <div class="row" style="margin-bottom:12px"><span class="style-tag grow">Let others know you are recording. Names are added when the notes are written.</span>
+      <button class="btn ghost" id="catchup">What did I miss?</button><button class="btn" id="stop-meet" style="background:var(--danger)">Stop</button></div>
+    ${src ? `<div class="status bad" style="margin-bottom:8px">${esc(src)}</div>` : ""}
+    <div id="catchup-out">${window.__catch || ""}</div>
+    <div id="live-tr" style="max-height:calc(100vh - 330px);overflow-y:auto">${blocks(lines) || '<p class="style-tag">Listening. Text appears about every 30 seconds.</p>'}</div>`;
+  if (keep) { const t = $("live-tr"); t.scrollTop = t.scrollHeight; }
+  $("stop-meet").onclick = async () => { await api().meeting_stop(); window.__catch = ""; toast("Writing your notes…"); pollMeeting(); };
+  $("catchup").onclick = async () => { window.__catch = '<div class="catchup">Catching up…</div>'; $("catchup-out").innerHTML = window.__catch; const x = await api().meeting_catchup(); window.__catch = `<div class="catchup">${esc(x.text || x.error || "")}</div>`; $("catchup-out").innerHTML = window.__catch; };
+}
+
+function mdSummary(src, done) {
+  const inline = (t) => esc(t).replace(/\*\*(.+?)\*\*/g, "<b>$1</b>").replace(/\*(.+?)\*/g, "<em>$1</em>");
+  let out = "", inList = false, task = 0;
+  for (const line of src.split("\n")) {
+    const l = line.trimEnd();
+    const li = l.match(/^\s*[-*] (\[( |x)\] )?(.*)$/);
+    if (li) {
+      if (!inList) { out += "<ul>"; inList = true; }
+      if (li[1]) { const i = task++, on = done.includes(i) || li[2] === "x"; out += `<li class="task ${on ? "done" : ""}" data-task="${i}"><input type="checkbox" ${on ? "checked" : ""}><span>${inline(li[3])}</span></li>`; }
+      else out += `<li>${inline(li[3])}</li>`;
+      continue;
+    }
+    if (inList) { out += "</ul>"; inList = false; }
+    if (/^## /.test(l)) out += `<h2>${inline(l.slice(3))}</h2>`;
+    else if (/^# /.test(l)) out += `<h2>${inline(l.slice(2))}</h2>`;
+    else if (l) out += `<p>${inline(l)}</p>`;
+  }
+  return out + (inList ? "</ul>" : "");
+}
+
+function renderMeeting(r) {
+  const d = DET, m = d.meta;
+  const people = [d.me, ...(m.attendees || [])];
+  const speakers = [...new Set(d.lines.map(l => l.who))].filter(n => !people.includes(n));
+  r.innerHTML = `<div class="mh-title" contenteditable="true" id="mh-title" spellcheck="false">${esc(m.title)}</div>
+    <div class="style-tag" style="margin-top:4px">${new Date(m.started * 1000).toLocaleString(undefined, { weekday: "long", month: "long", day: "numeric", hour: "numeric", minute: "2-digit" })} · ${Math.max(1, Math.round(m.duration / 60))} min · ${m.words} words</div>
+    <div class="people-row">${[...people, ...speakers].map(n => `<span class="pchip">${av(n)}${esc(n)}</span>`).join("")}</div>
+    <div class="row" style="justify-content:space-between;align-items:flex-end">
+      <div class="tabs" style="margin:0;border:0">${["summary", "transcript", "notes"].map(t => `<button data-tab="${t}" class="${TAB === t ? "on" : ""}">${{ summary: "Summary", transcript: "Transcript", notes: "My notes" }[t]}</button>`).join("")}</div>
+      <div class="row" style="gap:6px;margin-bottom:6px"><button class="icon-btn" title="Copy" id="md-copy">${ICON_COPY}</button><button class="icon-btn" title="Open file" id="md-open"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 3h7v7M21 3l-9 9M19 14v5a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2h5"/></svg></button><button class="icon-btn" title="Delete" id="md-del">${ICON_DEL}</button></div>
+    </div>
+    <div style="border-top:1px solid var(--line);margin-bottom:18px"></div>
+    <div id="tab-body"></div>`;
+  const body = $("tab-body");
+  if (TAB === "summary") {
+    body.innerHTML = `<div class="md">${mdSummary(d.summary, d.done)}</div>`;
+    body.querySelectorAll("[data-task]").forEach(li => li.onclick = async (e) => {
+      const i = +li.dataset.task, on = !li.classList.contains("done");
+      li.classList.toggle("done", on); li.querySelector("input").checked = on;
+      d.done = on ? [...d.done, i] : d.done.filter(x => x !== i);
+      await api().meeting_set_done(SEL, i, on);
+    });
+  } else if (TAB === "transcript") {
+    body.innerHTML = `<input type="text" id="tr-q" placeholder="Search transcript" style="width:260px;margin-bottom:8px"><div id="tr-body">${blocks(d.lines) || '<p class="style-tag">No speech was captured.</p>'}</div>`;
+    $("tr-q").oninput = (e) => { $("tr-body").innerHTML = blocks(d.lines, e.target.value.trim()) || '<p class="style-tag">No matches.</p>'; };
+  } else {
+    body.innerHTML = `<textarea class="mynotes" id="my-notes" placeholder="Your own notes for this meeting. Saved automatically, kept separate from the AI summary.">${esc(d.my_notes)}</textarea>`;
+    let tmr; $("my-notes").oninput = (e) => { clearTimeout(tmr); tmr = setTimeout(async () => { d.my_notes = e.target.value; await api().meeting_save_notes(SEL, d.my_notes); toast("Saved"); }, 700); };
+  }
+  r.querySelectorAll("[data-tab]").forEach(b => b.onclick = () => { TAB = b.dataset.tab; renderMeeting(r); });
+  $("mh-title").onkeydown = (e) => { if (e.key === "Enter") { e.preventDefault(); e.target.blur(); } };
+  $("mh-title").onblur = async (e) => { const t = e.target.textContent.trim(); if (t && t !== m.title) { m.title = await api().meeting_rename(SEL, t); ML = await api().meetings(); renderList(); toast("Renamed"); } };
+  $("md-copy").onclick = async () => { await api().copy(`# ${m.title}\n\n${d.summary}`); toast("Summary copied"); };
+  $("md-open").onclick = () => api().meeting_open(SEL);
+  $("md-del").onclick = async () => { await api().meeting_delete(SEL); SEL = null; DET = null; RIGHT = "empty"; ML = await api().meetings(); renderList(); renderRight(); toast("Deleted"); };
+}
+
+async function openMeeting(mid, seek) {
+  if (mid !== SEL && seek === undefined) TAB = "summary";
+  SEL = mid; RIGHT = "meeting";
+  DET = await api().meeting_detail(mid);
+  if (seek !== undefined) TAB = "transcript";
+  renderList(); renderRight();
+  if (seek !== undefined) {
+    const blk = [...document.querySelectorAll(".blk")].reverse().find(b => +b.dataset.t <= seek) || document.querySelector(".blk");
+    if (blk) { blk.scrollIntoView({ block: "center" }); blk.classList.add("flash"); setTimeout(() => blk.classList.remove("flash"), 1800); }
+  }
+}
+
+function renderNewMeeting(r) {
+  const known = [...new Set([...(S.config.people || []), ...ML.flatMap(m => m.attendees || [])])];
+  r.innerHTML = `<h1>New meeting notes</h1><p class="sub">Optional details. Names help Vox label who said what and spell names correctly.</p>
+    <div class="card" style="max-width:620px">
+      <label class="style-tag">Meeting title</label>
+      <input type="text" id="nm-title" style="width:100%;margin:4px 0 14px" placeholder="e.g. HYPAR weekly sync">
+      <label class="style-tag">People in the meeting (not you)</label>
+      <div class="chips" id="nm-chips" style="margin:6px 0 8px"></div>
+      <div class="row"><input type="text" id="nm-person" class="grow" list="nm-known" placeholder="Type a name and press Enter"><datalist id="nm-known">${known.map(n => `<option value="${esc(n)}">`).join("")}</datalist></div>
+      <div class="row" style="margin-top:18px"><div class="grow style-tag">Let others know you are recording.</div><button class="btn ghost" id="nm-skip">Skip details</button><button class="btn" id="nm-go">Start recording</button></div>
+    </div>`;
+  const people = [];
+  const draw = () => { $("nm-chips").innerHTML = people.map((p, i) => `<span class="chip">${esc(p)}<button data-i="${i}">${ICON_X}</button></span>`).join(""); };
+  $("nm-person").onkeydown = (e) => { if (e.key === "Enter" || e.key === ",") { e.preventDefault(); const v = e.target.value.trim().replace(/,$/, ""); if (v && !people.includes(v)) people.push(v); e.target.value = ""; draw(); } };
+  $("nm-chips").onclick = (e) => { const b = e.target.closest("button"); if (b) { people.splice(+b.dataset.i, 1); draw(); } };
+  $("nm-skip").onclick = () => startMeeting(null);
+  $("nm-go").onclick = () => { const v = $("nm-person").value.trim(); if (v && !people.includes(v)) people.push(v); startMeeting(null, { title: $("nm-title").value.trim(), attendees: people }); };
+  $("nm-title").focus();
+}
+
+function renderCalendarPane(r) {
+  if (!CAL || !CAL.connected) {
+    const g = CAL && CAL.google_available;
+    r.innerHTML = `<h1>Connect your calendar</h1><p class="sub">Vox reads meeting titles and attendee names so notes are titled and speakers are named. Read-only.</p>
+      ${g ? `<div class="card" style="max-width:620px"><div style="font-weight:600;margin-bottom:4px">Google Calendar</div>
+        <div class="style-tag" style="margin-bottom:12px">Works with Gmail and school or work Google accounts. Your browser opens to sign in. Google may show "Google hasn't verified this app": click <b>Advanced</b> → <b>Go to Vox</b>. Vox only asks to read events.</div>
+        <button class="btn" id="g-connect">Connect Google Calendar</button><div class="status" id="g-status" style="margin-top:10px"></div></div>` : ""}
+      <details style="margin-top:16px;max-width:620px"><summary class="style-tag" style="cursor:pointer">${g ? "Or use an iCal link (Outlook, or Google accounts that allow it)" : "Connect with an iCal link"}</summary>
+      <div class="card" style="margin-top:10px">
+        <div class="style-tag" style="margin-bottom:10px">Google: Settings → your calendar → Integrate calendar → <b>Secret address in iCal format</b> (not the public address). Outlook: Settings → Calendar → Shared calendars → Publish → ICS link.</div>
+        <div class="row"><input type="text" id="cal-url" class="grow" placeholder="https://…/basic.ics"><button class="btn ghost" id="cal-connect">Connect</button></div>
+        ${CAL && CAL.error ? `<div class="status bad" style="margin-top:8px">${esc(CAL.error)}</div>` : ""}</div></details>
+      <p class="style-tag" style="margin-top:16px">No calendar? You can still type the title and people when you start notes.</p>`;
+    if (g) $("g-connect").onclick = async () => {
+      const st = $("g-status"); st.className = "status"; st.textContent = "Finish signing in in your browser…";
+      const res = await api().google_connect();
+      if (!res.ok) { st.className = "status bad"; st.textContent = res.error; return; }
+      toast("Connected " + (res.email || "")); CAL = await api().calendar(true); renderUpcoming(); renderLeftLive(); renderRight();
+    };
+    $("cal-connect").onclick = async () => { const u = $("cal-url").value.trim(); if (!u) return; CAL = await api().connect_calendar(u); S.config.calendar_url = u; toast(CAL.error ? "Could not read that link" : "Calendar connected"); renderUpcoming(); renderLeftLive(); renderRight(); };
+    return;
+  }
+  const now = Date.now() / 1000;
+  const rows = (CAL.events || []).map(e => {
+    const live = e.start - 300 <= now && now <= e.end;
+    return `<div class="ev ${live ? "now" : ""}"><div class="when">${dayLabel(e.start)}<br>${hm(e.start)}</div>
+      <div><div style="font-weight:550">${esc(e.title)}</div><div class="people">${e.attendees.length ? esc(e.attendees.join(", ")) : "Just you"}${e.link ? " · online" : ""}</div></div>
+      <div>${live && !(MS && MS.active) ? `<button class="btn" data-uid="${esc(e.uid)}">Take notes</button>` : ""}</div></div>`;
+  }).join("");
+  r.innerHTML = `<h1>Calendar</h1><p class="sub">${CAL.google ? "Google Calendar · " + esc(CAL.google_email) : "iCal link"} · next 7 days, refreshes every 5 minutes.${CAL.error ? " Last refresh failed: " + esc(CAL.error) : ""}</p>
+    <div class="card list">${rows || '<div class="empty">No meetings in the next 7 days.</div>'}</div>
+    <div class="row" style="margin-top:10px"><div class="grow"></div><button class="btn ghost" id="cal-refresh">Refresh</button><button class="btn ghost" id="cal-disconnect">Disconnect</button></div>`;
+  r.querySelectorAll("[data-uid]").forEach(b => b.onclick = () => startMeeting(b.dataset.uid));
+  $("cal-refresh").onclick = async () => { CAL = await api().calendar(true); renderUpcoming(); renderRight(); };
+  $("cal-disconnect").onclick = async () => { if (CAL.google) await api().google_disconnect(); else await api().connect_calendar(""); CAL = await api().calendar(true); renderUpcoming(); renderLeftLive(); renderRight(); };
+}
+function openCalendar() { SEL = null; RIGHT = "calendar"; renderList(); renderRight(); }
+
+// ----- ask across meetings
+$("ask-q").onkeydown = async (e) => {
+  if (e.key !== "Enter") return;
+  const q = e.target.value.trim(); if (!q) return;
+  SEL = null; RIGHT = "ask"; renderList();
+  const r = $("nr");
+  r.innerHTML = `<h1>${esc(q)}</h1><p class="sub">Searching your meetings…</p>`;
+  const res = await api().meetings_ask(q);
+  if (RIGHT !== "ask") return;
+  const byRef = Object.fromEntries((res.sources || []).map(s => [s.ref, s]));
+  let ans = esc(res.answer).replace(/\*\*(.+?)\*\*/g, "<b>$1</b>").replace(/\n/g, "<br>");
+  ans = ans.replace(/\[(M\d+)(?:[ ,]+(\d{1,3}:\d{2}))?\]/g, (all, ref, ts) => {
+    const s = byRef[ref]; if (!s) return all;
+    const sec = ts ? ts.split(":").reduce((a, b) => a * 60 + +b, 0) : "";
+    return `<button class="cite" data-mid="${esc(s.id)}" data-seek="${sec}" title="${esc(s.title)}">${esc(s.title.length > 24 ? s.title.slice(0, 23) + "…" : s.title)}${ts ? " · " + ts : ""}</button>`;
+  });
+  r.innerHTML = `<h1>${esc(q)}</h1><div class="card" style="margin-top:16px;line-height:1.7">${ans}</div>
+    <div class="style-tag" style="margin-top:10px">Sources: ${(res.sources || []).map(s => esc(s.title)).join(" · ") || "none"}</div>`;
+  r.querySelectorAll(".cite").forEach(b => b.onclick = () => openMeeting(b.dataset.mid, b.dataset.seek === "" ? undefined : +b.dataset.seek));
+};
+
+async function startMeeting(uid, manual) {
+  const r = await api().meeting_start(uid, manual || null);
+  if (!r.ok) { toast(r.error || "Could not start"); return; }
+  toast("Recording. Let others know."); SEL = null; RIGHT = "live"; await pollMeeting(); renderList();
+}
+async function pollMeeting() {
+  const was = MS && (MS.active || MS.processing);
+  MS = await api().meeting_status();
+  renderLeftLive();
+  if (RIGHT === "live") renderRight();
+  if (was && !MS.active && !MS.processing) {
+    ML = await api().meetings(); renderList(); toast("Notes ready");
+    if (ML.length) openMeeting(ML[0].id);
+  }
+}
+async function enterNotes() {
+  [MS, CAL, ML] = await Promise.all([api().meeting_status(), api().calendar(false), api().meetings()]);
+  if (MS && MS.active && RIGHT === "empty") RIGHT = "live";
+  renderLeftLive(); renderUpcoming(); renderList(); renderRight();
+  clearInterval(notesTimer);
+  notesTimer = setInterval(() => { if ($("notes").classList.contains("active")) pollMeeting(); else clearInterval(notesTimer); }, 1500);
+}
+
+async function refresh() {
+  S = await api().get_state();
+  renderHome(); renderWelcome(); renderDict(); renderPeople(); renderStyles(); renderSettings();
+}
+window.addEventListener("pywebviewready", () => { refresh(); setInterval(() => { if ($("home").classList.contains("active") && !$("search").value) refresh(); }, 4000); });
+</script>
+</body>
+</html>

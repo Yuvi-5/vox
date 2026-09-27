@@ -1,0 +1,243 @@
+"""Main Vox window (pywebview + Edge WebView2). Reads and writes the same files the engine uses."""
+import json
+import logging
+import os
+import sys
+import time
+import urllib.request
+
+import pyperclip
+import webview
+
+import meeting
+import vcalendar
+import vox_core as core
+
+log = logging.getLogger("vox.ui")
+RUN_KEY = r"Software\Microsoft\Windows\CurrentVersion\Run"
+
+HOTKEYS = [
+    {"id": "ctrl+cmd", "keys": ["ctrl_l", "cmd"], "label": "Ctrl + Win"},
+    {"id": "ctrl_r", "keys": ["ctrl_r"], "label": "Right Ctrl"},
+    {"id": "alt_r", "keys": ["alt_r"], "label": "Right Alt"},
+    {"id": "ctrl+alt", "keys": ["ctrl", "alt"], "label": "Ctrl + Alt"},
+    {"id": "ctrl+shift", "keys": ["ctrl", "shift"], "label": "Ctrl + Shift"},
+]
+TYPING_WPM = 40  # average typing speed used for "time saved"
+
+
+def resource(*parts):
+    base = getattr(sys, "_MEIPASS", os.path.dirname(os.path.abspath(__file__)))
+    return os.path.join(base, *parts)
+
+
+def autostart_command():
+    if getattr(sys, "frozen", False):
+        return f'"{sys.executable}"'
+    exe = sys.executable.replace("python.exe", "pythonw.exe")
+    return f'"{exe}" "{os.path.join(os.path.dirname(os.path.abspath(__file__)), "vox_app.py")}"'
+
+
+class Api:
+    # ------------------------------------------------------------- reading
+    def get_state(self):
+        cfg = core.load_config()
+        hist = core.read_history()
+        now = time.time()
+        week = [h for h in hist if now - h.get("t", 0) < 7 * 86400]
+        words = sum(h.get("words", 0) for h in hist)
+        secs = sum(h.get("secs", 0) for h in hist)
+        wpm = round(words / (secs / 60)) if secs > 5 else 0
+        saved_min = max(0, words / TYPING_WPM - secs / 60)
+        apps = sorted({h.get("app", "").lower() for h in hist if h.get("app")} | set(cfg.get("app_styles", {})))
+        hk = next((h["id"] for h in HOTKEYS if h["keys"] == cfg.get("hotkey")), "custom")
+        return {
+            "config": cfg,
+            "hotkeys": HOTKEYS,
+            "hotkey_id": hk,
+            "history": list(reversed(hist[-300:])),
+            "stats": {
+                "week_words": sum(h.get("words", 0) for h in week),
+                "total_words": words,
+                "count": len(hist),
+                "wpm": wpm,
+                "saved_min": round(saved_min),
+            },
+            "apps": apps,
+            "autostart": self.get_autostart(),
+            "data_dir": core.data_dir(),
+        }
+
+    # ------------------------------------------------------------- writing
+    def save_config(self, cfg):
+        merged = core.load_config()
+        merged.update(cfg)
+        core.save_config(merged)
+        return True
+
+    def set_hotkey(self, hid):
+        for h in HOTKEYS:
+            if h["id"] == hid:
+                self.save_config({"hotkey": h["keys"]})
+                return h["label"]
+        return None
+
+    def check_key(self, key):
+        try:
+            return core.check_key(key.strip())
+        except Exception as e:
+            log.warning("key check failed: %s", e)
+            return None
+
+    def copy(self, text):
+        pyperclip.copy(text)
+        return True
+
+    def delete_history(self, t):
+        core.write_history([h for h in core.read_history() if h.get("t") != t])
+        return True
+
+    def clear_history(self):
+        core.write_history([])
+        return True
+
+    def open_url(self, url):
+        import webbrowser
+        if url.startswith("https://"):
+            webbrowser.open(url)
+
+    def open_data_folder(self):
+        os.startfile(core.data_dir())
+
+    # ------------------------------------------------------------ meetings
+    def _engine(self, path, body=None):
+        try:
+            with open(os.path.join(core.data_dir(), "engine.json")) as f:
+                info = json.load(f)
+            req = urllib.request.Request(f"http://127.0.0.1:{info['port']}{path}", method="POST",
+                                         data=json.dumps(body or {}).encode(),
+                                         headers={"X-Vox-Token": info["token"], "Content-Type": "application/json"})
+            with urllib.request.urlopen(req, timeout=120) as r:
+                return json.loads(r.read())
+        except Exception as e:
+            log.warning("engine call %s failed: %s", path, e)
+            return {"error": "Vox is not running in the tray. Start Vox from the Start menu."}
+
+    def meeting_status(self):
+        return self._engine("/meeting/status")
+
+    def meeting_start(self, uid=None, manual=None):
+        return self._engine("/meeting/start", {"uid": uid, "manual": manual})
+
+    def meeting_stop(self):
+        return self._engine("/meeting/stop")
+
+    def meeting_catchup(self):
+        return self._engine("/meeting/catchup")
+
+    def meetings(self):
+        return meeting.list_meetings()
+
+    def meeting_notes(self, mid):
+        return meeting.read_notes(mid)
+
+    def meeting_delete(self, mid):
+        meeting.delete_meeting(mid)
+        return True
+
+    def meeting_detail(self, mid):
+        return meeting.detail(mid, core.load_config())
+
+    def meeting_save_notes(self, mid, text):
+        meeting.save_my_notes(mid, text)
+        return True
+
+    def meeting_set_done(self, mid, index, done):
+        meeting.set_done(mid, index, done)
+        return True
+
+    def meeting_rename(self, mid, title):
+        return meeting.rename(mid, title)
+
+    def meetings_ask(self, question):
+        try:
+            return meeting.ask(core.load_config(), question)
+        except Exception as e:
+            log.exception("ask failed")
+            return {"answer": f"Could not answer: {e}", "sources": []}
+
+    def meeting_open(self, mid):
+        m = next((x for x in meeting.list_meetings() if x["id"] == mid), None)
+        path = (m or {}).get("export")
+        if path and os.path.exists(path):
+            os.startfile(path)
+        else:
+            os.startfile(os.path.join(meeting.meetings_dir(), os.path.basename(mid), "notes.md"))
+
+    def open_notes_folder(self):
+        os.startfile(meeting.notes_export_dir(core.load_config()))
+
+    # ------------------------------------------------------------ calendar
+    def calendar(self, force=False):
+        cfg = core.load_config()
+        data = vcalendar.fetch(cfg, force=force)
+        now = time.time()
+        upcoming = [e for e in data.get("events", []) if e["end"] > now][:20]
+        cur = vcalendar.current_event(data.get("events", []))
+        import gcal
+        return {"connected": bool(cfg.get("calendar_url")) or gcal.connected(), "google": gcal.connected(),
+                "google_email": gcal.account(), "google_available": gcal.available(),
+                "events": upcoming, "current": cur, "error": data.get("error", "")}
+
+    def google_status(self):
+        import gcal
+        return {"available": gcal.available(), "connected": gcal.connected(), "email": gcal.account()}
+
+    def google_connect(self):
+        import gcal
+        res = gcal.connect()
+        if res.get("ok") and res.get("email"):
+            cfg = core.load_config()
+            if not cfg.get("my_email"):
+                self.save_config({"my_email": res["email"]})
+        return res
+
+    def google_disconnect(self):
+        import gcal
+        gcal.disconnect()
+        return True
+
+    def connect_calendar(self, url):
+        self.save_config({"calendar_url": (url or "").strip()})
+        return self.calendar(force=True)
+
+    # ---------------------------------------------------------- autostart
+    def get_autostart(self):
+        if sys.platform != "win32":
+            return False
+        import winreg
+        try:
+            with winreg.OpenKey(winreg.HKEY_CURRENT_USER, RUN_KEY) as k:
+                winreg.QueryValueEx(k, "Vox")
+                return True
+        except OSError:
+            return False
+
+    def set_autostart(self, on):
+        import winreg
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, RUN_KEY, 0, winreg.KEY_SET_VALUE) as k:
+            if on:
+                winreg.SetValueEx(k, "Vox", 0, winreg.REG_SZ, autostart_command())
+            else:
+                try:
+                    winreg.DeleteValue(k, "Vox")
+                except OSError:
+                    pass
+        return self.get_autostart()
+
+
+def main():
+    api = Api()
+    webview.create_window("Vox", url=resource("ui", "index.html"), js_api=api,
+                          width=1040, height=700, min_size=(860, 580), background_color="#F7F7F5")
+    webview.start()

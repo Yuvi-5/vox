@@ -1,0 +1,431 @@
+"""Background part of Vox: tray icon, global hotkey, recording, Groq pipeline, paste, overlay."""
+import ctypes
+import json
+import logging
+import os
+import secrets
+import subprocess
+import sys
+import threading
+import time
+
+import numpy as np
+import psutil
+import pyperclip
+import pystray
+import requests
+import sounddevice as sd
+from PIL import Image, ImageDraw
+from pynput import keyboard
+
+import vox_core as core
+import vcalendar
+from meeting import Meeting
+from overlay import Overlay
+
+log = logging.getLogger("vox")
+
+MIN_SECONDS = 0.4
+MAX_SECONDS = 360
+TAP_SECONDS = 0.3       # a press shorter than this is a tap
+DOUBLE_TAP_GAP = 0.5    # second tap within this starts hands-free mode
+
+KEY_ALIASES = {
+    "ctrl": {keyboard.Key.ctrl, keyboard.Key.ctrl_l, keyboard.Key.ctrl_r},
+    "ctrl_l": {keyboard.Key.ctrl_l, keyboard.Key.ctrl},
+    "ctrl_r": {keyboard.Key.ctrl_r},
+    "cmd": {keyboard.Key.cmd, keyboard.Key.cmd_l, keyboard.Key.cmd_r},
+    "alt": {keyboard.Key.alt, keyboard.Key.alt_l, keyboard.Key.alt_r, keyboard.Key.alt_gr},
+    "alt_r": {keyboard.Key.alt_r, keyboard.Key.alt_gr},
+    "shift": {keyboard.Key.shift, keyboard.Key.shift_l, keyboard.Key.shift_r},
+    "space": {keyboard.Key.space},
+}
+MODIFIERS = set().union(*[KEY_ALIASES[k] for k in ("ctrl", "cmd", "alt", "shift")])
+
+
+def foreground_app():
+    """Returns (exe name, window title) of the focused window."""
+    try:
+        user32 = ctypes.windll.user32
+        hwnd = user32.GetForegroundWindow()
+        pid = ctypes.c_ulong()
+        user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
+        length = user32.GetWindowTextLengthW(hwnd)
+        buf = ctypes.create_unicode_buffer(length + 1)
+        user32.GetWindowTextW(hwnd, buf, length + 1)
+        return psutil.Process(pid.value).name(), buf.value
+    except Exception:
+        return "", ""
+
+
+def dot(color):
+    img = Image.new("RGBA", (64, 64), (0, 0, 0, 0))
+    ImageDraw.Draw(img).ellipse((6, 6, 58, 58), fill=color)
+    return img
+
+
+ICONS = {"idle": dot("#5F6368"), "rec": dot("#E53935"), "busy": dot("#F59E0B")}
+
+
+def window_command():
+    """Command that opens the main window (same program, --window)."""
+    if getattr(sys, "frozen", False):
+        return [sys.executable, "--window"]
+    here = os.path.dirname(os.path.abspath(__file__))
+    exe = sys.executable.replace("python.exe", "pythonw.exe")
+    return [exe, os.path.join(here, "vox_app.py"), "--window"]
+
+
+def open_window():
+    subprocess.Popen(window_command(), close_fds=True)
+
+
+class Engine:
+    def __init__(self):
+        self.cfg = core.load_config()
+        self.cfg_mtime = self._mtime()
+        self.hotkey = self._hotkey()
+        self.pressed = set()
+        self.recording = False
+        self.busy = False
+        self.chunks = []
+        self.stream = None
+        self.target = ("", "")
+        self.started_at = 0.0
+        self.state = "idle"   # read by the overlay: idle | rec | busy
+        self.level = 0.0
+        self.overlay = None
+        self.hands_free = False
+        self.combo_was_down = False
+        self.press_t = 0.0
+        self.last_tap_t = 0.0
+        self.meeting = Meeting(lambda: self.cfg)
+        self.kb = keyboard.Controller()
+        self.icon = pystray.Icon(
+            "Vox", ICONS["idle"], "Vox",
+            menu=pystray.Menu(
+                pystray.MenuItem("Open Vox", lambda *_: open_window(), default=True),
+                pystray.MenuItem(lambda _: "Stop meeting notes" if self.meeting.active else "Start meeting notes",
+                                 self.toggle_meeting),
+                pystray.MenuItem("Quit Vox", self.quit),
+            ),
+        )
+
+    # ---------------------------------------------------------------- config
+    def _mtime(self):
+        try:
+            return os.path.getmtime(core.config_path())
+        except OSError:
+            return 0
+
+    def _hotkey(self):
+        keys = [k for k in self.cfg.get("hotkey", ["ctrl", "cmd"]) if k in KEY_ALIASES]
+        return [KEY_ALIASES[k] for k in keys] or [KEY_ALIASES["ctrl"], KEY_ALIASES["cmd"]]
+
+    def reload_if_changed(self):
+        m = self._mtime()
+        if m != self.cfg_mtime:
+            self.cfg_mtime = m
+            self.cfg = core.load_config()
+            self.hotkey = self._hotkey()
+            log.info("settings reloaded, hotkey=%s", self.cfg.get("hotkey"))
+
+    def _watch_config(self):
+        while True:
+            time.sleep(1.0)
+            try:
+                if not self.recording:
+                    self.reload_if_changed()
+            except Exception:
+                log.exception("config reload failed")
+
+    # ------------------------------------------------------------------ misc
+    def quit(self, *_):
+        log.info("quit")
+        self.icon.stop()
+        if self.overlay:
+            self.overlay.stop()
+        os._exit(0)
+
+    def notify(self, msg):
+        log.info("notify: %s", msg)
+        try:
+            self.icon.notify(msg, "Vox")
+        except Exception:
+            pass
+
+    def set_state(self, name):
+        self.state = name
+        if name != "rec":
+            self.level = 0.0
+        self.icon.icon = ICONS[name]
+
+    # --------------------------------------------------------------- hotkey
+    # Hold the shortcut to talk, release to insert.
+    # Double-tap it for hands-free: recording continues until you press it once more (Esc cancels).
+    def combo_down(self):
+        return all(self.pressed & group for group in self.hotkey)
+
+    def on_press(self, key):
+        self.pressed.add(key)
+        if key == keyboard.Key.esc and self.recording and self.hands_free:
+            self.cancel()
+            return
+        if self.combo_down() and not self.combo_was_down:
+            self.combo_was_down = True
+            self.on_combo_down()
+
+    def on_release(self, key):
+        self.pressed.discard(key)
+        if self.combo_was_down and not self.combo_down():
+            self.combo_was_down = False
+            self.on_combo_up()
+
+    def on_combo_down(self):
+        if any(self.pressed & KEY_ALIASES["cmd"]):
+            # Tap an unassigned key so Windows does not open the Start menu when Win is released.
+            self.kb.tap(keyboard.KeyCode.from_vk(0xE8))
+        if self.busy:
+            return
+        now = time.time()
+        if self.recording and self.hands_free:
+            self.hands_free = False
+            self.stop()
+            return
+        if not self.recording:
+            double = now - self.last_tap_t < DOUBLE_TAP_GAP
+            self.press_t = now
+            self.start()
+            if double and self.recording:
+                self.hands_free = True
+                self.last_tap_t = 0.0
+                log.info("hands-free mode")
+
+    def on_combo_up(self):
+        if not self.recording or self.hands_free:
+            return
+        if time.time() - self.press_t < TAP_SECONDS:
+            self.last_tap_t = time.time()   # a tap: wait for a possible second tap
+            self.cancel()
+        else:
+            self.stop()
+
+    # ------------------------------------------------------------ recording
+    def start(self):
+        if not self.cfg.get("api_key"):
+            self.notify("Add your Groq API key in Vox > Settings")
+            open_window()
+            return
+        self.target = foreground_app()
+        self.chunks = []
+        self.started_at = time.time()
+        try:
+            self.stream = sd.InputStream(samplerate=core.SAMPLE_RATE, channels=1, dtype="int16",
+                                         callback=self._audio)
+            self.stream.start()
+        except Exception as e:
+            self.notify(f"Microphone error: {e}")
+            return
+        self.recording = True
+        self.set_state("rec")
+        log.info("recording started (app=%s)", self.target[0])
+
+    def _audio(self, indata, frames, t, status):
+        self.chunks.append(bytes(indata))
+        rms = float(np.sqrt(np.mean(np.square(indata.astype(np.float32))))) / 32768.0
+        self.level = min(1.0, rms * 12)
+        limit = MAX_SECONDS * (3 if self.hands_free else 1)
+        if time.time() - self.started_at > limit:
+            threading.Thread(target=self.stop, daemon=True).start()
+
+    def _close_stream(self):
+        try:
+            self.stream.stop()
+            self.stream.close()
+        except Exception:
+            pass
+
+    def cancel(self):
+        """Discard the current recording."""
+        if not self.recording:
+            return
+        self.recording = False
+        self.hands_free = False
+        self._close_stream()
+        self.set_state("idle")
+
+    def stop(self):
+        if not self.recording:
+            return
+        self.recording = False
+        self.hands_free = False
+        self._close_stream()
+        pcm = b"".join(self.chunks)
+        if len(pcm) < core.SAMPLE_RATE * 2 * MIN_SECONDS:
+            self.set_state("idle")
+            return
+        self.busy = True
+        self.set_state("busy")
+        threading.Thread(target=self._process, args=(pcm,), daemon=True).start()
+
+    def _process(self, pcm):
+        exe, title = self.target
+        secs = len(pcm) / (core.SAMPLE_RATE * 2)
+        try:
+            raw, text = core.process(self.cfg, pcm, exe, title or exe)
+            if text:
+                self.paste(text)
+                core.add_history({
+                    "t": time.time(), "app": exe, "title": title[:120], "raw": raw, "text": text,
+                    "words": len(text.split()), "secs": round(secs, 1),
+                })
+        except core.GroqError as e:
+            log.error("groq error: %s", e)
+            if e.code == 401:
+                self.notify("Groq rejected the API key. Check Vox > Settings.")
+            elif e.code == 429:
+                self.notify("Groq free limit reached. Try again shortly.")
+            else:
+                self.notify(str(e))
+        except requests.RequestException as e:
+            self.notify(f"Network error: {e}")
+        except Exception:
+            log.exception("processing failed")
+        finally:
+            self.busy = False
+            self.set_state("idle")
+
+    def paste(self, text):
+        # Wait until the hotkey modifiers are up so Ctrl+V is not combined with Win.
+        deadline = time.time() + 2
+        while self.pressed & MODIFIERS and time.time() < deadline:
+            time.sleep(0.02)
+        try:
+            old = pyperclip.paste()
+        except Exception:
+            old = None
+        pyperclip.copy(text)
+        time.sleep(0.05)
+        with self.kb.pressed(keyboard.Key.ctrl):
+            self.kb.tap("v")
+        time.sleep(0.4)
+        # By default the dictated text stays on the clipboard so you can paste it again anywhere.
+        if old is not None and not self.cfg.get("keep_clipboard", True):
+            pyperclip.copy(old)
+
+    # -------------------------------------------------------------- meeting
+    def _event(self, uid=None):
+        """Calendar event by uid, or the one happening now."""
+        try:
+            events = vcalendar.fetch(self.cfg).get("events", [])
+        except Exception:
+            return None
+        if uid:
+            return next((e for e in events if e["uid"] == uid), None)
+        return vcalendar.current_event(events)
+
+    def start_meeting(self, uid=None, manual=None):
+        ev = self._event(uid) if not manual else None
+        if manual and (manual.get("title") or manual.get("attendees")):
+            ev = {"uid": "", "title": (manual.get("title") or "").strip()[:120],
+                  "attendees": [a.strip() for a in manual.get("attendees", []) if a.strip()][:30],
+                  "organizer": "", "link": ""}
+        if self.meeting.start(ev):
+            what = f"'{ev['title']}'" if ev else "Meeting"
+            self.notify(f"{what} notes started. Let others know you are recording.")
+            return True
+        self.notify(self.meeting.last_error or "Could not start meeting notes")
+        return False
+
+    def toggle_meeting(self, *_):
+        if self.meeting.active:
+            self.meeting.stop()
+            self.notify("Meeting ended. Writing your notes...")
+        else:
+            self.start_meeting()
+
+    def _watch_calendar(self):
+        """Reminds you (or auto-starts notes) when a calendar meeting with other people begins."""
+        reminded = set()
+        while True:
+            time.sleep(30)
+            try:
+                if not (self.cfg.get("calendar_url") or os.path.exists(os.path.join(core.data_dir(), "google_token.json"))) \
+                        or self.meeting.active or self.meeting.processing:
+                    continue
+                now = time.time()
+                for ev in vcalendar.fetch(self.cfg).get("events", []):
+                    if not ev["attendees"] or ev["uid"] in reminded or not (ev["start"] - 60 <= now <= ev["start"] + 180):
+                        continue
+                    reminded.add(ev["uid"])
+                    if self.cfg.get("auto_notes"):
+                        self.start_meeting(ev["uid"])
+                    else:
+                        self.notify(f"'{ev['title']}' is starting. Tray icon > Start meeting notes, or open Vox.")
+                    break
+            except Exception:
+                log.exception("calendar watch failed")
+
+    # --------------------------------------------------- control server
+    def _serve(self):
+        """Local HTTP API used by the Vox window (127.0.0.1 only, random port, secret token)."""
+        from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+        token = secrets.token_hex(16)
+        engine = self
+
+        class H(BaseHTTPRequestHandler):
+            def log_message(self, *a):
+                pass
+
+            def _send(self, code, obj):
+                data = json.dumps(obj).encode()
+                self.send_response(code)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(data)))
+                self.end_headers()
+                self.wfile.write(data)
+
+            def do_POST(self):
+                if self.headers.get("X-Vox-Token") != token:
+                    return self._send(403, {"error": "forbidden"})
+                m = engine.meeting
+                try:
+                    if self.path == "/meeting/start":
+                        n = int(self.headers.get("Content-Length") or 0)
+                        body = json.loads(self.rfile.read(n) or b"{}") if n else {}
+                        ok = engine.start_meeting(body.get("uid"), body.get("manual"))
+                        return self._send(200, {"ok": ok, "error": m.last_error})
+                    if self.path == "/meeting/stop":
+                        return self._send(200, {"ok": m.stop()})
+                    if self.path == "/meeting/status":
+                        return self._send(200, m.status())
+                    if self.path == "/meeting/catchup":
+                        return self._send(200, {"text": m.catch_up()})
+                    return self._send(404, {"error": "unknown"})
+                except Exception as e:
+                    log.exception("control %s failed", self.path)
+                    return self._send(500, {"error": str(e)})
+
+        srv = ThreadingHTTPServer(("127.0.0.1", 0), H)
+        with open(os.path.join(core.data_dir(), "engine.json"), "w") as f:
+            json.dump({"port": srv.server_address[1], "token": token, "pid": os.getpid()}, f)
+        srv.serve_forever()
+
+    # ------------------------------------------------------------------ run
+    def run(self):
+        listener = keyboard.Listener(on_press=self.on_press, on_release=self.on_release)
+        listener.daemon = True
+        listener.start()
+        threading.Thread(target=self._watch_config, daemon=True).start()
+        threading.Thread(target=self._serve, daemon=True, name="control").start()
+        threading.Thread(target=self._watch_calendar, daemon=True, name="calendar").start()
+        self.icon.run_detached()
+        log.info("engine started, hotkey=%s", self.cfg.get("hotkey"))
+        if not self.cfg.get("api_key"):
+            open_window()
+        try:
+            self.overlay = Overlay(self)
+        except Exception:
+            log.exception("overlay failed to start; running without it")
+            threading.Event().wait()
+        self.overlay.run()  # Tk must own the main thread

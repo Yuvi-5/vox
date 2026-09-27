@@ -1,0 +1,123 @@
+"""Calendar via a private iCal (ICS) link: Google Calendar's "Secret address in iCal format",
+or Outlook's published ICS link. Read-only, no sign-in, works for anyone you share Vox with."""
+import json
+import logging
+import os
+import re
+import time
+from datetime import datetime, timedelta, timezone
+
+import requests
+
+import vox_core as core
+
+log = logging.getLogger("vox.calendar")
+CACHE_SECONDS = 300
+
+
+def cache_path():
+    return os.path.join(core.data_dir(), "calendar.json")
+
+
+def _name(prop):
+    """Display name for an ATTENDEE / ORGANIZER property."""
+    if prop is None:
+        return ""
+    cn = prop.params.get("CN") if hasattr(prop, "params") else None
+    if cn:
+        return str(cn).strip().strip('"')
+    email = str(prop).replace("mailto:", "").replace("MAILTO:", "")
+    return email.split("@")[0].replace(".", " ").title() if "@" in email else email
+
+
+def _email(prop):
+    return str(prop).replace("mailto:", "").replace("MAILTO:", "").strip().lower()
+
+
+def _to_utc(dt):
+    if not isinstance(dt, datetime):          # all-day event (date only)
+        return None
+    if dt.tzinfo is None:
+        dt = dt.astimezone()                  # floating time: treat as local
+    return dt.astimezone(timezone.utc)
+
+
+def parse(ics_text, start, end, my_email=""):
+    import icalendar
+    import recurring_ical_events
+    cal = icalendar.Calendar.from_ical(ics_text)
+    out = []
+    for ev in recurring_ical_events.of(cal).between(start, end):
+        s, e = _to_utc(ev.get("DTSTART").dt), _to_utc(ev.get("DTEND").dt if ev.get("DTEND") else ev.get("DTSTART").dt)
+        if s is None:
+            continue
+        if str(ev.get("STATUS", "")).upper() == "CANCELLED":
+            continue
+        atts = ev.get("ATTENDEE") or []
+        if not isinstance(atts, list):
+            atts = [atts]
+        people = []
+        for a in atts:
+            if my_email and _email(a) == my_email.lower():
+                continue
+            if str(a.params.get("CUTYPE", "")).upper() in ("RESOURCE", "ROOM"):
+                continue
+            n = _name(a)
+            if n and n not in people:
+                people.append(n)
+        org = _name(ev.get("ORGANIZER"))
+        desc = str(ev.get("DESCRIPTION", ""))
+        loc = str(ev.get("LOCATION", ""))
+        link = ""
+        m = re.search(r"https://(?:meet\.google\.com|[\w.-]*zoom\.us|teams\.microsoft\.com|teams\.live\.com)/\S+", desc + " " + loc)
+        if m:
+            link = m.group(0).rstrip(").,>\"'")
+        out.append({
+            "uid": str(ev.get("UID", "")) + "|" + s.isoformat(),
+            "title": str(ev.get("SUMMARY", "(no title)")),
+            "start": s.timestamp(), "end": (e or s).timestamp(),
+            "attendees": people, "organizer": org, "link": link,
+        })
+    out.sort(key=lambda x: x["start"])
+    return out
+
+
+def fetch(cfg, force=False):
+    """Events from 12 h ago to 7 days ahead, from Google sign-in if connected, else the iCal link. Cached 5 min."""
+    import gcal
+    url = (cfg.get("calendar_url") or "").strip()
+    if url.startswith("webcal://"):
+        url = "https://" + url[len("webcal://"):]
+    source = "google:" + gcal.account() if gcal.connected() else url
+    if not source:
+        return {"events": [], "error": "", "fetched": 0, "source": ""}
+    try:
+        with open(cache_path(), encoding="utf-8") as f:
+            cached = json.load(f)
+        if not force and cached.get("source") == source and time.time() - cached.get("fetched", 0) < CACHE_SECONDS:
+            return cached
+    except (OSError, ValueError):
+        pass
+    now = datetime.now(timezone.utc)
+    try:
+        if source.startswith("google:"):
+            events = gcal.events()
+        else:
+            r = requests.get(url, timeout=20)
+            r.raise_for_status()
+            events = parse(r.content, now - timedelta(hours=12), now + timedelta(days=7), cfg.get("my_email", ""))
+        data = {"source": source, "events": events, "error": "", "fetched": time.time()}
+    except Exception as e:
+        log.warning("calendar fetch failed: %s", e)
+        data = {"source": source, "events": [], "error": str(e)[:200], "fetched": time.time()}
+    with open(cache_path(), "w", encoding="utf-8") as f:
+        json.dump(data, f)
+    return data
+
+
+def current_event(events, now=None, early=300):
+    """The meeting happening now (or starting within `early` seconds). Prefers ones with attendees."""
+    now = now or time.time()
+    live = [e for e in events if e["start"] - early <= now <= e["end"] and e["end"] - e["start"] < 12 * 3600]
+    live.sort(key=lambda e: (not e["attendees"], abs(e["start"] - now)))
+    return live[0] if live else None
