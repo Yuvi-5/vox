@@ -371,3 +371,111 @@ def read_notes(mid):
 def delete_meeting(mid):
     import shutil
     shutil.rmtree(os.path.join(meetings_dir(), os.path.basename(mid)), ignore_errors=True)
+
+
+# ------------------------------------------------------------ meeting page data
+
+def _folder_of(mid):
+    return os.path.join(meetings_dir(), os.path.basename(mid))
+
+
+def _read_json(path, default):
+    try:
+        with open(path, encoding="utf-8") as f:
+            return json.load(f)
+    except (OSError, ValueError):
+        return default
+
+
+def _write_json(path, data):
+    tmp = path + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False)
+    os.replace(tmp, path)
+
+
+def detail(mid, cfg):
+    """Everything the meeting page needs: meta, summary (without transcript), speaker-labelled lines, your notes."""
+    d = _folder_of(mid)
+    meta = _read_json(os.path.join(d, "meta.json"), {})
+    notes = read_notes(mid)
+    summary = notes.split("\n## Transcript", 1)[0].strip()
+    # drop the title and the italic header line; the page shows them separately
+    summary = re.sub(r"^#\s+.*\n+", "", summary, count=1)
+    summary = re.sub(r"^\*[^\n]*\*\s*\n+", "", summary, count=1)
+    tr = _read_json(os.path.join(d, "transcript.json"), {"entries": []})
+    me = (cfg.get("your_name") or "").strip() or "You"
+    lines = []
+    for e in tr.get("entries", []):
+        if e["who"] == "You":
+            who, likely = me, False
+        elif e.get("name") and e["name"] != "Unknown":
+            who, likely = e["name"], True
+        else:
+            who, likely = "Others", False
+        lines.append({"t": e["t"], "who": who, "me": e["who"] == "You", "likely": likely, "text": e["text"]})
+    user = ""
+    p = os.path.join(d, "my_notes.md")
+    if os.path.exists(p):
+        with open(p, encoding="utf-8") as f:
+            user = f.read()
+    return {"meta": meta, "summary": summary, "lines": lines, "my_notes": user,
+            "done": meta.get("done", []), "me": me}
+
+
+def save_my_notes(mid, text):
+    with open(os.path.join(_folder_of(mid), "my_notes.md"), "w", encoding="utf-8") as f:
+        f.write(text)
+
+
+def set_done(mid, index, done):
+    p = os.path.join(_folder_of(mid), "meta.json")
+    meta = _read_json(p, {})
+    s = set(meta.get("done", []))
+    (s.add if done else s.discard)(int(index))
+    meta["done"] = sorted(s)
+    _write_json(p, meta)
+
+
+def rename(mid, title):
+    p = os.path.join(_folder_of(mid), "meta.json")
+    meta = _read_json(p, {})
+    meta["title"] = title.strip()[:120] or meta.get("title", "")
+    _write_json(p, meta)
+    return meta["title"]
+
+
+ASK_PROMPT = """You answer questions about the user's past meetings using only the meeting records below.
+Each record starts with [M<n>] and the meeting title and date. Transcript lines look like "[mm:ss] Speaker: text".
+Answer in a few sentences or bullets. After every fact, cite its source as [M<n> mm:ss] (or [M<n>] when it comes from the summary).
+If the records do not contain the answer, say so plainly. No preamble."""
+
+
+def _score(text, words):
+    t = text.lower()
+    return sum(t.count(w) for w in words)
+
+
+def ask(cfg, question):
+    """Search every meeting, send the most relevant ones to the notes model, return answer + sources."""
+    words = [w for w in re.findall(r"[a-z0-9]{3,}", question.lower())
+             if w not in {"the", "and", "did", "what", "who", "was", "were", "about", "with", "when", "that", "this", "have", "said", "say", "does"}]
+    scored = []
+    for m in list_meetings():
+        try:
+            text = read_notes(m["id"])
+        except OSError:
+            continue
+        s = _score(m.get("title", ""), words) * 5 + _score(text, words)
+        scored.append((s, m["started"], m, text))
+    if not scored:
+        return {"answer": "No meetings recorded yet.", "sources": []}
+    scored.sort(key=lambda x: (x[0], x[1]), reverse=True)
+    picked = [x for x in scored if x[0] > 0][:4] or scored[:2]   # nothing matched: use the latest two
+    parts, sources = [], []
+    for i, (_s, started, m, text) in enumerate(picked, 1):
+        when = datetime.fromtimestamp(started).strftime("%a %d %b %Y %H:%M")
+        parts.append(f"[M{i}] {m.get('title', '')} ({when})\n{text[:24000]}")
+        sources.append({"ref": f"M{i}", "id": m["id"], "title": m.get("title", ""), "started": started})
+    answer = _llm(cfg, ASK_PROMPT, "\n\n".join(parts) + f"\n\nQUESTION: {question}", max_tokens=1500)
+    return {"answer": answer, "sources": sources}

@@ -21,7 +21,7 @@ DEFAULT_CONFIG = {
     "language": "",
     "cleanup": True,
     "default_style": "neutral",
-    "dictionary": ["LoomXR", "Qiskit", "lume x r => LoomXR"],
+    "dictionary": [],
     "people": [],
     "app_styles": {
         "outlook.exe": "formal",

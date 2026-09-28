@@ -1,0 +1,86 @@
+package com.minhaj.vox;
+
+import android.animation.ValueAnimator;
+import android.content.Context;
+import android.graphics.Canvas;
+import android.graphics.Paint;
+import android.graphics.RectF;
+import android.view.View;
+
+/** Round mic bubble. Grey when idle, red with a level ring while recording, amber spinner while processing. */
+public class BubbleView extends View {
+    private final Paint fill = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final Paint ring = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final Paint glyph = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final RectF r = new RectF();
+    private int state = DictationService.IDLE;
+    private float level;
+    private float spin;
+    private final ValueAnimator spinner;
+    private final float d;
+
+    public BubbleView(Context c) {
+        super(c);
+        d = getResources().getDisplayMetrics().density;
+        ring.setStyle(Paint.Style.STROKE);
+        ring.setStrokeWidth(3 * d);
+        ring.setStrokeCap(Paint.Cap.ROUND);
+        glyph.setColor(0xFFFFFFFF);
+        glyph.setStrokeWidth(2.2f * d);
+        glyph.setStrokeCap(Paint.Cap.ROUND);
+        spinner = ValueAnimator.ofFloat(0, 360);
+        spinner.setDuration(900);
+        spinner.setRepeatCount(ValueAnimator.INFINITE);
+        spinner.addUpdateListener(a -> { spin = (float) a.getAnimatedValue(); invalidate(); });
+        setContentDescription("Vox dictation");
+    }
+
+    public void setState(int s) {
+        state = s;
+        level = 0;
+        if (s == DictationService.PROCESSING) { if (!spinner.isStarted()) spinner.start(); }
+        else spinner.cancel();
+        invalidate();
+    }
+
+    public void setLevel(float l) {
+        level = level * 0.6f + l * 0.4f;
+        invalidate();
+    }
+
+    @Override
+    protected void onDraw(Canvas c) {
+        float w = getWidth(), h = getHeight();
+        float cx = w / 2f, cy = h / 2f;
+        float base = Math.min(w, h) / 2f - 5 * d;
+
+        int color;
+        switch (state) {
+            case DictationService.RECORDING: color = 0xFFE53935; break;
+            case DictationService.PROCESSING: color = 0xFFF59E0B; break;
+            default: color = 0xE0303338;
+        }
+        fill.setColor(color);
+        float rad = state == DictationService.RECORDING ? base * (0.86f + 0.14f * level) : base * 0.86f;
+        c.drawCircle(cx, cy, rad, fill);
+
+        if (state == DictationService.RECORDING) {
+            ring.setColor(0x66E53935);
+            c.drawCircle(cx, cy, base * (0.92f + 0.08f * level) + 2 * d, ring);
+        } else if (state == DictationService.PROCESSING) {
+            ring.setColor(0xFFFFFFFF);
+            r.set(cx - base * 0.95f, cy - base * 0.95f, cx + base * 0.95f, cy + base * 0.95f);
+            c.drawArc(r, spin, 90, false, ring);
+        }
+
+        // Mic glyph
+        float s = base * 0.42f;
+        glyph.setStyle(Paint.Style.FILL);
+        r.set(cx - s * 0.38f, cy - s * 0.95f, cx + s * 0.38f, cy + s * 0.25f);
+        c.drawRoundRect(r, s * 0.38f, s * 0.38f, glyph);
+        glyph.setStyle(Paint.Style.STROKE);
+        r.set(cx - s * 0.68f, cy - s * 0.55f, cx + s * 0.68f, cy + s * 0.55f);
+        c.drawArc(r, 20, 140, false, glyph);
+        c.drawLine(cx, cy + s * 0.55f, cx, cy + s * 0.9f, glyph);
+    }
+}

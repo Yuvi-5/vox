@@ -14,5 +14,6 @@ __pycache__/
 /Vox.apk
 windows/setup_and_run.bat
 windows/run_debug.bat
-# Windows-only repo for now: the Android app is kept locally
-android/
+# Android signing key: kept private, provided to GitHub Actions as a secret
+android/vox.keystore
+*.keystore

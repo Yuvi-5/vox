@@ -1,0 +1,333 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<title>Vox</title>
+<style>
+:root { --bg:#F7F7F5; --panel:#FFFFFF; --text:#1B1B1F; --muted:#6B6B73; --line:#E6E6E2; --accent:#2F5BEA; --accent-soft:#E6ECFD; --ok:#1E8E3E; --bad:#D93025; --warn:#B26A00; }
+.dark { --bg:#161618; --panel:#1E1E21; --text:#EDEDEF; --muted:#9A9AA3; --line:#2C2C31; --accent:#6E8BFF; --accent-soft:#232B47; --ok:#4CC36B; --bad:#FF6B5E; --warn:#F5B83D; }
+* { box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+html,body { margin:0; background:var(--bg); color:var(--text); font:15px/1.45 system-ui,-apple-system,"Roboto",sans-serif; }
+header { padding:22px 20px 6px; }
+h1 { font-size:28px; font-weight:700; margin:0; letter-spacing:-.01em; }
+.sub { color:var(--muted); margin:4px 0 0; font-size:14px; }
+main { padding:10px 16px 110px; }
+.page { display:none; } .page.on { display:block; }
+h2 { font-size:13px; text-transform:uppercase; letter-spacing:.05em; color:var(--muted); margin:24px 4px 8px; font-weight:650; }
+.card { background:var(--panel); border:1px solid var(--line); border-radius:18px; padding:16px; }
+.list { padding:0; overflow:hidden; }
+.row { display:flex; align-items:center; gap:12px; }
+.grow { flex:1; min-width:0; }
+.item { display:flex; align-items:center; gap:12px; padding:14px 16px; border-bottom:1px solid var(--line); }
+.item:last-child { border-bottom:0; }
+.item .t { font-weight:600; }
+.item .d { color:var(--muted); font-size:13px; margin-top:2px; }
+.btn { border:0; background:var(--accent); color:#fff; font:inherit; font-weight:650; padding:10px 16px; border-radius:12px; }
+.btn.ghost { background:var(--accent-soft); color:var(--accent); }
+.btn.full { width:100%; padding:13px; margin-top:12px; }
+.btn.danger { background:transparent; color:var(--bad); border:1px solid var(--line); }
+input[type=text], input[type=password], select, textarea { width:100%; font:inherit; color:var(--text); background:var(--bg); border:1px solid var(--line); border-radius:12px; padding:12px; outline:none; }
+input:focus, select:focus, textarea:focus { border-color:var(--accent); }
+.check { width:26px; height:26px; border-radius:50%; flex:none; display:grid; place-items:center; font-size:14px; font-weight:700; color:#fff; background:var(--line); }
+.check.ok { background:var(--ok); }
+.stats { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+.stat .n { font-size:26px; font-weight:700; font-variant-numeric:tabular-nums; }
+.stat .l { color:var(--muted); font-size:12.5px; }
+.hint { background:var(--accent-soft); border-radius:16px; padding:14px 16px; display:flex; gap:12px; align-items:center; }
+.hint svg { flex:none; color:var(--accent); }
+.day { color:var(--muted); font-size:12px; font-weight:650; text-transform:uppercase; letter-spacing:.05em; margin:18px 4px 8px; }
+.entry { padding:13px 16px; border-bottom:1px solid var(--line); }
+.entry:last-child { border-bottom:0; }
+.entry .meta { color:var(--muted); font-size:12px; display:flex; gap:6px; align-items:center; margin-top:6px; }
+.entry .txt { white-space:pre-wrap; word-break:break-word; }
+.ib { border:0; background:transparent; color:var(--muted); padding:6px; border-radius:8px; display:grid; place-items:center; }
+.ib:active { background:var(--bg); }
+.chips { display:flex; flex-wrap:wrap; gap:8px; margin-top:12px; }
+.chip { display:inline-flex; align-items:center; gap:4px; background:var(--bg); border:1px solid var(--line); border-radius:999px; padding:6px 6px 6px 13px; font-size:14px; }
+.chip button { border:0; background:transparent; color:var(--muted); width:24px; height:24px; border-radius:50%; font-size:16px; line-height:1; }
+.add { display:flex; gap:8px; }
+.add input { flex:1; }
+.switch { position:relative; width:48px; height:28px; flex:none; }
+.switch input { opacity:0; width:0; height:0; }
+.switch span { position:absolute; inset:0; background:var(--line); border-radius:999px; transition:.2s; }
+.switch span::after { content:""; position:absolute; width:22px; height:22px; left:3px; top:3px; background:#fff; border-radius:50%; transition:.2s; box-shadow:0 1px 3px rgba(0,0,0,.25); }
+.switch input:checked + span { background:var(--accent); }
+.switch input:checked + span::after { transform:translateX(20px); }
+select.inline { width:auto; padding:8px 10px; background:var(--panel); }
+.status { font-size:13px; font-weight:600; margin-top:8px; }
+.status.ok { color:var(--ok); } .status.bad { color:var(--bad); }
+.empty { color:var(--muted); text-align:center; padding:26px 16px; }
+.note { color:var(--muted); font-size:13px; margin-top:8px; }
+.warn { color:var(--warn); }
+nav { position:fixed; left:0; right:0; bottom:0; background:var(--panel); border-top:1px solid var(--line); display:flex; padding:6px 6px calc(6px + env(safe-area-inset-bottom)); z-index:5; }
+nav button { flex:1; border:0; background:transparent; color:var(--muted); font:inherit; font-size:11.5px; font-weight:600; display:flex; flex-direction:column; align-items:center; gap:3px; padding:6px 0; border-radius:12px; }
+nav button svg { width:23px; height:23px; }
+nav button.on { color:var(--accent); }
+nav button.on .pill { background:var(--accent-soft); }
+.pill { padding:3px 16px; border-radius:999px; display:grid; place-items:center; }
+.sheet-bg { position:fixed; inset:0; background:rgba(0,0,0,.4); display:none; z-index:9; }
+.sheet { position:fixed; left:0; right:0; bottom:0; max-height:80vh; background:var(--panel); border-radius:22px 22px 0 0; z-index:10; transform:translateY(100%); transition:transform .25s; display:flex; flex-direction:column; }
+.sheet.on { transform:none; } .sheet-bg.on { display:block; }
+.sheet .grab { width:40px; height:4px; background:var(--line); border-radius:4px; margin:10px auto 6px; }
+.sheet .body { overflow-y:auto; padding:0 16px 24px; }
+#toast { position:fixed; left:50%; bottom:90px; transform:translate(-50%,20px); background:var(--text); color:var(--bg); padding:10px 18px; border-radius:999px; font-size:14px; opacity:0; transition:.2s; pointer-events:none; z-index:20; white-space:nowrap; }
+#toast.on { opacity:1; transform:translate(-50%,0); }
+.logo { width:34px; height:34px; border-radius:10px; background:var(--accent); display:grid; place-items:center; }
+</style>
+</head>
+<body>
+<header><div class="row"><div class="grow"><h1 id="title">Vox</h1><p class="sub" id="subtitle"></p></div><div class="logo"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round"><rect x="9" y="3" width="6" height="11" rx="3" fill="#fff" stroke="none"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg></div></div></header>
+
+<main>
+<!-- HOME -->
+<section class="page on" id="home">
+  <div id="setup"></div>
+  <div id="ready"></div>
+  <div class="stats" style="margin-top:14px">
+    <div class="card stat"><div class="n" id="s-week">0</div><div class="l">Words this week</div></div>
+    <div class="card stat"><div class="n" id="s-total">0</div><div class="l">Total words</div></div>
+    <div class="card stat"><div class="n" id="s-wpm">–</div><div class="l">Words per minute</div></div>
+    <div class="card stat"><div class="n" id="s-saved">0m</div><div class="l">Time saved vs typing</div></div>
+  </div>
+  <h2>Try it</h2>
+  <textarea id="try" rows="3" placeholder="Tap here, then tap the Vox bubble and speak"></textarea>
+  <h2>History</h2>
+  <input type="text" id="search" placeholder="Search your dictations">
+  <div id="history"></div>
+</section>
+
+<!-- DICTIONARY -->
+<section class="page" id="dict">
+  <p class="sub" style="margin:0 4px 6px">Vox uses these as spelling hints so names and terms come out right.</p>
+  <h2>My words</h2>
+  <div class="card"><div class="add"><input type="text" id="w-in" placeholder="e.g. LoomXR"><button class="btn" id="w-add">Add</button></div><div class="chips" id="words"></div></div>
+  <h2>People</h2>
+  <div class="card"><div class="add"><input type="text" id="p-in" placeholder="e.g. Dr. Arghavan Asad"><button class="btn" id="p-add">Add</button></div><div class="chips" id="people"></div></div>
+  <h2>Replacements</h2>
+  <div class="card">
+    <input type="text" id="r-wrong" placeholder="When it hears (e.g. lume x r)">
+    <input type="text" id="r-right" placeholder="Write (e.g. LoomXR)" style="margin-top:8px">
+    <button class="btn full" id="r-add">Add replacement</button>
+  </div>
+  <div class="card list" id="repls" style="margin-top:10px"></div>
+</section>
+
+<!-- STYLES -->
+<section class="page" id="styles">
+  <p class="sub" style="margin:0 4px 6px">Tone of your text in each app. Vox detects the app you are typing in.</p>
+  <h2>Default</h2>
+  <div class="card list"><div class="item"><div class="grow"><div class="t">Other apps</div><div class="d">Apps not listed below</div></div><select class="inline" id="def-style"></select></div></div>
+  <h2>Per app</h2>
+  <div class="card list" id="app-styles"></div>
+  <button class="btn full ghost" id="add-app">+ Add an app</button>
+</section>
+
+<!-- SETTINGS -->
+<section class="page" id="settings">
+  <h2>Groq key</h2>
+  <div class="card">
+    <input type="password" id="key" placeholder="gsk_..." autocomplete="off">
+    <div class="row" style="margin-top:10px;gap:8px"><button class="btn" id="key-save" style="flex:1">Save and test</button><button class="btn ghost" id="key-get">Get a free key</button></div>
+    <div class="status" id="key-status"></div>
+    <div class="note">Free, no card. Your own key means your own limits. Stored only on this phone.</div>
+  </div>
+  <h2>Dictation</h2>
+  <div class="card list">
+    <div class="item"><div class="grow"><div class="t">AI cleanup</div><div class="d">Removes fillers, fixes punctuation, applies corrections</div></div><label class="switch"><input type="checkbox" id="cleanup"><span></span></label></div>
+    <div class="item"><div class="grow"><div class="t">Bubble only while typing</div><div class="d">Hide the bubble when no text box is selected</div></div><label class="switch"><input type="checkbox" id="only-typing"><span></span></label></div>
+    <div class="item"><div class="grow"><div class="t">Language</div><div class="d">Auto can switch on short phrases</div></div>
+      <select class="inline" id="language"><option value="">Auto</option><option value="en">English</option><option value="ur">Urdu</option><option value="hi">Hindi</option><option value="ar">Arabic</option><option value="fr">French</option><option value="es">Spanish</option></select></div>
+  </div>
+  <h2>Background</h2>
+  <div class="card list">
+    <div class="item"><div class="grow"><div class="t">Dictation service</div><div class="d">Keeps the mic ready for the bubble</div></div><label class="switch"><input type="checkbox" id="service"><span></span></label></div>
+    <div class="item" id="battery"><div class="grow"><div class="t">Battery: Unrestricted</div><div class="d">Stops Android from closing Vox. Tap, find Vox, allow.</div></div><span style="color:var(--muted)">›</span></div>
+  </div>
+  <h2>Advanced</h2>
+  <div class="card">
+    <label class="note" style="margin:0">Speech model</label><input type="text" id="stt" style="margin:4px 0 10px">
+    <label class="note" style="margin:0">Cleanup model</label><input type="text" id="llm" style="margin-top:4px">
+  </div>
+  <button class="btn full danger" id="clear">Clear history</button>
+  <p class="note" style="text-align:center;margin-top:18px" id="about"></p>
+</section>
+</main>
+
+<nav>
+  <button data-p="home" class="on"><span class="pill"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 11l9-7 9 7v9a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"/></svg></span>Home</button>
+  <button data-p="dict"><span class="pill"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h11a3 3 0 0 1 3 3v13H7a3 3 0 0 1-3-3z"/><path d="M4 17a3 3 0 0 1 3-3h11"/></svg></span>Dictionary</button>
+  <button data-p="styles"><span class="pill"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 7h10M4 12h16M4 17h7"/></svg></span>Styles</button>
+  <button data-p="settings"><span class="pill"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M4.2 4.2l2.1 2.1M17.7 17.7l2.1 2.1M2 12h3M19 12h3M4.2 19.8l2.1-2.1M17.7 6.3l2.1-2.1"/></svg></span>Settings</button>
+</nav>
+
+<div class="sheet-bg" id="sheet-bg"></div>
+<div class="sheet" id="sheet"><div class="grab"></div><div class="body" id="sheet-body"></div></div>
+<div id="toast"></div>
+
+<script>
+const V = window.Vox || {   // browser preview fallback
+  state: () => JSON.stringify({ config: { api_key: "", dictionary: [], people: [], app_styles: {}, cleanup: true, only_typing: true, default_style: "neutral", stt_model: "whisper-large-v3-turbo", llm_model: "openai/gpt-oss-20b", language: "" }, mic: false, a11y: false, service: false, history: [], dark: false, version: "dev" }),
+  save(){}, requestMic(){}, openAccessibility(){}, openAppInfo(){}, openBattery(){}, setService(){}, testKey(k, cb){ setTimeout(() => window[cb]("ok"), 300); }, copy(){}, deleteHistory(){}, clearHistory(){}, openUrl(){}, toast(){}, apps: () => "[]", appLabel: (p) => p
+};
+const STYLES = [["neutral","Neutral"],["formal","Formal"],["casual","Casual"],["very_casual","Very casual"],["raw","Raw (no cleanup)"]];
+const TITLES = { home: ["Vox", ""], dict: ["Dictionary", ""], styles: ["Styles", ""], settings: ["Settings", ""] };
+let S = null, PAGE = "home";
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s ?? "").replace(/[&<>"]/g, c => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;" }[c]));
+function toast(m) { const t = $("toast"); t.textContent = m; t.classList.add("on"); clearTimeout(t._h); t._h = setTimeout(() => t.classList.remove("on"), 1600); }
+function save(part, msg) { Object.assign(S.config, part); V.save(JSON.stringify(part)); if (msg) toast(msg); }
+const ICON_COPY = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a1 1 0 0 1 1-1h10"/></svg>';
+const ICON_DEL = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/></svg>';
+
+// ---------------- navigation
+function go(p) {
+  PAGE = p;
+  document.querySelectorAll("nav button").forEach(b => b.classList.toggle("on", b.dataset.p === p));
+  document.querySelectorAll(".page").forEach(s => s.classList.toggle("on", s.id === p));
+  $("title").textContent = TITLES[p][0];
+  window.scrollTo(0, 0);
+  render();
+}
+document.querySelectorAll("nav button").forEach(b => b.onclick = () => go(b.dataset.p));
+window.voxBack = () => { if ($("sheet").classList.contains("on")) { closeSheet(); return true; } if (PAGE !== "home") { go("home"); return true; } return false; };
+
+// ---------------- home
+function setupSteps() {
+  return [
+    { done: !!S.config.api_key, t: "Add your free Groq key", d: "Powers speech-to-text and cleanup. Takes 2 minutes.", btn: "Add key", act: () => { go("settings"); setTimeout(() => $("key").focus(), 200); } },
+    { done: S.mic, t: "Allow the microphone", d: "So Vox can hear you.", btn: "Allow", act: () => V.requestMic() },
+    { done: S.a11y, t: "Turn on the Vox bubble", d: "Settings → Accessibility → Downloaded apps → Vox dictation bubble → On.", btn: "Open", act: () => V.openAccessibility(),
+      extra: '<div class="note">Greyed out or "Restricted setting"? Open <a href="#" id="appinfo">App info</a>, tap ⋮ (top right) → <b>Allow restricted settings</b>, then try again.</div>' },
+    { done: S.service, t: "Start the dictation service", d: "Keeps the mic ready. A small notification stays while it runs.", btn: "Start", act: () => V.setService(true) },
+  ];
+}
+function renderHome() {
+  const steps = setupSteps(), left = steps.filter(s => !s.done).length;
+  if (left) {
+    $("setup").innerHTML = `<h2 style="margin-top:4px">Set up · ${4 - left} of 4 done</h2><div class="card list">` + steps.map((s, i) =>
+      `<div class="item" style="align-items:flex-start"><div class="check ${s.done ? "ok" : ""}">${s.done ? "✓" : i + 1}</div>
+       <div class="grow"><div class="t">${s.t}</div><div class="d">${s.d}</div>${!s.done && s.extra ? s.extra : ""}</div>
+       ${s.done ? "" : `<button class="btn" data-step="${i}">${s.btn}</button>`}</div>`).join("") + "</div>";
+    $("setup").querySelectorAll("[data-step]").forEach(b => b.onclick = () => steps[+b.dataset.step].act());
+    const a = $("appinfo"); if (a) a.onclick = (e) => { e.preventDefault(); V.openAppInfo(); };
+    $("ready").innerHTML = "";
+  } else {
+    $("setup").innerHTML = "";
+    $("ready").innerHTML = `<div class="hint"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg>
+      <div><b>Ready.</b> Tap any text box, then tap the bubble, speak, and tap again. Long-press the bubble to cancel.</div></div>`;
+  }
+  const h = S.history || [], now = Date.now() / 1000;
+  const words = h.reduce((a, e) => a + (e.words || 0), 0), secs = h.reduce((a, e) => a + (e.secs || 0), 0);
+  const week = h.filter(e => now - e.t < 7 * 86400).reduce((a, e) => a + (e.words || 0), 0);
+  const fmt = (n) => n >= 10000 ? (n / 1000).toFixed(1) + "k" : n.toLocaleString();
+  $("s-week").textContent = fmt(week); $("s-total").textContent = fmt(words);
+  $("s-wpm").textContent = secs > 5 ? Math.round(words / (secs / 60)) : "–";
+  const m = Math.max(0, Math.round(words / 40 - secs / 60)); $("s-saved").textContent = m >= 60 ? `${Math.floor(m / 60)}h ${m % 60}m` : `${m}m`;
+  renderHistory();
+}
+function renderHistory() {
+  const q = $("search").value.trim().toLowerCase();
+  const items = (S.history || []).filter(e => !q || (e.text || e.clean || "").toLowerCase().includes(q));
+  if (!items.length) { $("history").innerHTML = `<div class="card empty">${q ? "No matches." : "Your dictations will show up here."}</div>`; return; }
+  let html = "", day = "";
+  const today = new Date().toDateString(), yest = new Date(Date.now() - 864e5).toDateString();
+  items.slice(0, 200).forEach(e => {
+    const d = new Date(e.t * 1000), ds = d.toDateString();
+    if (ds !== day) { if (day) html += "</div>"; day = ds; html += `<div class="day">${ds === today ? "Today" : ds === yest ? "Yesterday" : d.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" })}</div><div class="card list">`; }
+    html += `<div class="entry"><div class="txt">${esc(e.text || e.clean)}</div><div class="meta"><span class="grow">${d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}${e.app ? " · " + esc(e.app) : ""}</span>
+      <button class="ib" data-copy="${e.t}">${ICON_COPY}</button><button class="ib" data-del="${e.t}">${ICON_DEL}</button></div></div>`;
+  });
+  $("history").innerHTML = html + "</div>";
+}
+$("search").oninput = renderHistory;
+$("history").onclick = (ev) => {
+  const c = ev.target.closest("[data-copy]"), d = ev.target.closest("[data-del]");
+  if (c) { const e = S.history.find(x => String(x.t) === c.dataset.copy); V.copy(e.text || e.clean); toast("Copied"); }
+  if (d) { V.deleteHistory(Number(d.dataset.del)); S.history = S.history.filter(x => String(x.t) !== d.dataset.del); renderHome(); }
+};
+
+// ---------------- dictionary
+function words() { return (S.config.dictionary || []).filter(l => !l.includes("=>")); }
+function repls() { return (S.config.dictionary || []).filter(l => l.includes("=>")).map(l => l.split("=>").map(s => s.trim())); }
+function setDict(w, r) { save({ dictionary: [...w, ...r.map(([a, b]) => `${a} => ${b}`)] }); }
+function chips(list, id) { $(id).innerHTML = list.length ? list.map((t, i) => `<span class="chip">${esc(t)}<button data-i="${i}">×</button></span>`).join("") : '<span class="note" style="margin:0">Nothing yet.</span>'; }
+function renderDict() {
+  chips(words(), "words"); chips(S.config.people || [], "people");
+  const r = repls();
+  $("repls").innerHTML = r.length ? r.map(([a, b], i) => `<div class="item"><div class="grow">${esc(a)} <span style="color:var(--muted)">→</span> <b>${esc(b)}</b></div><button class="ib" data-r="${i}">${ICON_DEL}</button></div>`).join("") : '<div class="empty">No replacements yet.</div>';
+}
+$("w-add").onclick = () => { const v = $("w-in").value.trim(); if (!v) return; const w = words(); if (!w.includes(v)) w.push(v); $("w-in").value = ""; setDict(w, repls()); renderDict(); };
+$("p-add").onclick = () => { const v = $("p-in").value.trim(); if (!v) return; const p = [...(S.config.people || [])]; if (!p.includes(v)) p.push(v); $("p-in").value = ""; save({ people: p }); renderDict(); };
+$("words").onclick = (e) => { const b = e.target.closest("button"); if (!b) return; const w = words(); w.splice(+b.dataset.i, 1); setDict(w, repls()); renderDict(); };
+$("people").onclick = (e) => { const b = e.target.closest("button"); if (!b) return; const p = [...S.config.people]; p.splice(+b.dataset.i, 1); save({ people: p }); renderDict(); };
+$("r-add").onclick = () => { const a = $("r-wrong").value.trim(), b = $("r-right").value.trim(); if (!a || !b) return; const r = repls(); r.push([a, b]); $("r-wrong").value = $("r-right").value = ""; setDict(words(), r); renderDict(); toast("Added"); };
+$("repls").onclick = (e) => { const b = e.target.closest("[data-r]"); if (!b) return; const r = repls(); r.splice(+b.dataset.r, 1); setDict(words(), r); renderDict(); };
+["w-in", "p-in"].forEach(id => $(id).onkeydown = (e) => { if (e.key === "Enter") $(id.replace("in", "add")).click(); });
+
+// ---------------- styles
+const opts = (v) => STYLES.map(([k, l]) => `<option value="${k}" ${k === v ? "selected" : ""}>${l}</option>`).join("");
+function renderStyles() {
+  $("def-style").innerHTML = opts(S.config.default_style || "neutral");
+  const m = S.config.app_styles || {}, keys = Object.keys(m);
+  $("app-styles").innerHTML = keys.length ? keys.map(k => `<div class="item"><div class="grow"><div class="t">${esc(V.appLabel(k))}</div><div class="d">${esc(k)}</div></div>
+    <select class="inline" data-app="${esc(k)}">${opts(m[k])}</select><button class="ib" data-rm="${esc(k)}">${ICON_DEL}</button></div>`).join("") : '<div class="empty">No apps yet.</div>';
+}
+$("def-style").onchange = (e) => save({ default_style: e.target.value }, "Saved");
+$("app-styles").onchange = (e) => { const a = e.target.dataset.app; if (a) save({ app_styles: { ...S.config.app_styles, [a]: e.target.value } }, "Saved"); };
+$("app-styles").onclick = (e) => { const b = e.target.closest("[data-rm]"); if (!b) return; const m = { ...S.config.app_styles }; delete m[b.dataset.rm]; save({ app_styles: m }); renderStyles(); };
+$("add-app").onclick = () => {
+  const apps = JSON.parse(V.apps());
+  openSheet(`<h2 style="margin-top:6px">Pick an app</h2><input type="text" id="app-q" placeholder="Search apps"><div class="card list" style="margin-top:10px" id="app-list"></div>`);
+  const draw = (q) => { $("app-list").innerHTML = apps.filter(a => !q || a.label.toLowerCase().includes(q)).slice(0, 80).map(a => `<div class="item" data-pkg="${esc(a.pkg)}"><div class="grow"><div class="t">${esc(a.label)}</div><div class="d">${esc(a.pkg)}</div></div><span style="color:var(--muted)">›</span></div>`).join("") || '<div class="empty">No apps found.</div>'; };
+  draw("");
+  $("app-q").oninput = (e) => draw(e.target.value.trim().toLowerCase());
+  $("app-list").onclick = (e) => { const r = e.target.closest("[data-pkg]"); if (!r) return; save({ app_styles: { ...S.config.app_styles, [r.dataset.pkg]: "casual" } }, "Added. Pick its style."); closeSheet(); renderStyles(); };
+};
+function openSheet(html) { $("sheet-body").innerHTML = html; $("sheet").classList.add("on"); $("sheet-bg").classList.add("on"); }
+function closeSheet() { $("sheet").classList.remove("on"); $("sheet-bg").classList.remove("on"); }
+$("sheet-bg").onclick = closeSheet;
+
+// ---------------- settings
+function renderSettings() {
+  const c = S.config;
+  if (document.activeElement !== $("key")) $("key").value = c.api_key || "";
+  $("cleanup").checked = c.cleanup !== false; $("only-typing").checked = c.only_typing !== false;
+  $("language").value = c.language || ""; $("service").checked = S.service;
+  $("stt").value = c.stt_model || ""; $("llm").value = c.llm_model || "";
+  $("about").textContent = `Vox ${S.version} · audio goes to Groq with your key · everything else stays on this phone`;
+}
+window.keyResult = (r) => {
+  const s = $("key-status");
+  if (r === "ok") { s.className = "status ok"; s.textContent = "Key works. You're set."; }
+  else if (r === "bad") { s.className = "status bad"; s.textContent = "Groq rejected this key. Copy it again."; }
+  else { s.className = "status bad"; s.textContent = "No internet. Key saved, test again later."; }
+};
+$("key-save").onclick = () => { const k = $("key").value.trim(); if (!k) return; save({ api_key: k }); $("key-status").className = "status"; $("key-status").textContent = "Checking…"; V.testKey(k, "keyResult"); };
+$("key-get").onclick = () => V.openUrl("https://console.groq.com/keys");
+$("cleanup").onchange = (e) => save({ cleanup: e.target.checked }, "Saved");
+$("only-typing").onchange = (e) => save({ only_typing: e.target.checked }, "Saved");
+$("language").onchange = (e) => save({ language: e.target.value }, "Saved");
+$("service").onchange = (e) => V.setService(e.target.checked);
+$("battery").onclick = () => V.openBattery();
+$("stt").onchange = (e) => save({ stt_model: e.target.value.trim() }, "Saved");
+$("llm").onchange = (e) => save({ llm_model: e.target.value.trim() }, "Saved");
+$("clear").onclick = () => { V.clearHistory(); S.history = []; toast("History cleared"); render(); };
+
+// ---------------- refresh
+function render() {
+  if (!S) return;
+  if (PAGE === "home") renderHome(); else if (PAGE === "dict") renderDict(); else if (PAGE === "styles") renderStyles(); else renderSettings();
+}
+window.voxRefresh = () => {
+  S = JSON.parse(V.state());
+  document.documentElement.classList.toggle("dark", !!S.dark);
+  const h = new Date().getHours();
+  TITLES.home[0] = h < 12 ? "Good morning" : h < 18 ? "Good afternoon" : "Good evening";
+  if (PAGE === "home") $("title").textContent = TITLES.home[0];
+  render();
+};
+voxRefresh();
+</script>
+</body>
+</html>
