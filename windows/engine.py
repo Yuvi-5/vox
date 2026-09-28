@@ -401,6 +401,10 @@ class Engine:
                         return self._send(200, m.status())
                     if self.path == "/meeting/catchup":
                         return self._send(200, {"text": m.catch_up()})
+                    if self.path == "/meeting/ask":
+                        n = int(self.headers.get("Content-Length") or 0)
+                        body = json.loads(self.rfile.read(n) or b"{}") if n else {}
+                        return self._send(200, {"text": m.ask_live(body.get("q", ""))})
                     return self._send(404, {"error": "unknown"})
                 except Exception as e:
                     log.exception("control %s failed", self.path)

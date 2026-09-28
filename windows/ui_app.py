@@ -135,6 +135,16 @@ class Api:
     def meeting_catchup(self):
         return self._engine("/meeting/catchup")
 
+    def meeting_ask_live(self, q):
+        return self._engine("/meeting/ask", {"q": q})
+
+    def meeting_ask(self, mid, q):
+        try:
+            return {"text": meeting.ask_meeting(core.load_config(), mid, q)}
+        except Exception as e:
+            log.exception("meeting ask failed")
+            return {"text": f"Could not answer: {e}"}
+
     def meetings(self):
         return meeting.list_meetings()
 

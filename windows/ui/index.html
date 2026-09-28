@@ -152,6 +152,14 @@ textarea.mynotes { width: 100%; min-height: 380px; font: inherit; color: var(--t
 .cite { all: unset; cursor: pointer; color: var(--accent); font-weight: 600; font-size: 12px; background: var(--accent-soft); border-radius: 5px; padding: 0 5px; }
 .empty-pane { height: 70%; display: grid; place-items: center; text-align: center; color: var(--muted); }
 .beta { font-size: 10px; font-weight: 650; color: var(--accent); background: var(--accent-soft); border-radius: 999px; padding: 1px 7px; margin-left: auto; }
+.meter { display: inline-flex; align-items: center; gap: 8px; font-size: 12.5px; color: var(--muted); }
+.meter .bar { width: 90px; height: 6px; border-radius: 6px; background: var(--line); overflow: hidden; }
+.meter .bar i { display: block; height: 100%; width: 0; background: var(--ok); transition: width .15s; }
+.askbox { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 12px; margin-top: 10px; }
+.chipbtn { all: unset; cursor: pointer; font-size: 12.5px; padding: 5px 11px; border-radius: 999px; background: var(--accent-soft); color: var(--accent); font-weight: 550; }
+.qa { border-top: 1px solid var(--line); margin-top: 10px; padding-top: 10px; }
+.qa .q { font-weight: 600; font-size: 13.5px; }
+.qa .a { margin-top: 4px; line-height: 1.55; }
 #toast { position: fixed; bottom: 22px; left: 50%; transform: translate(-50%, 20px); background: var(--text); color: var(--bg); padding: 8px 16px; border-radius: 999px; font-size: 13px; opacity: 0; transition: .2s; pointer-events: none; }
 #toast.show { opacity: 1; transform: translate(-50%, 0); }
 </style>
@@ -447,7 +455,8 @@ function renderLeftLive() {
     el.innerHTML = `<div class="livebox" id="go-live"><span class="rec-dot"></span><div class="grow"><div style="font-weight:600;font-size:13px">${esc(m.title || "Recording")}</div><div class="style-tag">Tap to view live transcript</div></div><span class="timer" style="font-size:14px">${clock(m.elapsed)}</span></div>`;
     $("go-live").onclick = () => { SEL = null; RIGHT = "live"; renderRight(); renderList(); };
   } else if (m.processing) {
-    el.innerHTML = `<div class="livebox"><span class="rec-dot" style="background:var(--accent)"></span><div class="style-tag">Writing notes…</div></div>`;
+    el.innerHTML = `<div class="livebox" id="go-live"><span class="rec-dot" style="background:var(--accent)"></span><div class="style-tag">${esc(m.stage || "Writing notes")}…</div></div>`;
+    $("go-live").onclick = () => { SEL = null; RIGHT = "live"; renderRight(); renderList(); };
   } else if (m.error && !("active" in m)) {
     el.innerHTML = `<div class="style-tag" style="margin-top:12px">${esc(m.error)}</div>`;
   } else {
@@ -503,21 +512,75 @@ function blocks(lines, q) {
 
 function renderLive(r) {
   const m = MS || {};
-  if (!m.active) { RIGHT = "empty"; return renderRight(); }
+  if (!m.active) {
+    if (m.processing) { r.innerHTML = `<div class="empty-pane"><div><span class="rec-dot" style="background:var(--accent);display:inline-block"></span>
+      <div style="font-size:17px;font-weight:600;color:var(--text);margin:10px 0 6px">${esc(m.stage || "Writing your notes")}…</div>
+      Vox is re-transcribing with a more accurate model, naming speakers and writing the summary.<br>A 1-hour meeting takes about 2 to 4 minutes.</div></div>`; return; }
+    RIGHT = "empty"; return renderRight();
+  }
   const me = S.config.your_name || "You";
+  if (!$("live-root")) {
+    r.innerHTML = `<div id="live-root">
+      <div class="row"><span class="rec-dot"></span><div class="mh-title grow" id="lv-title"></div><span class="timer" id="lv-timer"></span>
+        <button class="btn" id="stop-meet" style="background:var(--danger)">Stop</button></div>
+      <div class="row" style="margin:10px 0 4px;gap:18px;flex-wrap:wrap">
+        <span class="meter"><span class="mlabel">Your mic</span><span class="bar"><i id="lv-you"></i></span></span>
+        <span class="meter"><span class="mlabel">Call audio</span><span class="bar"><i id="lv-others"></i></span></span>
+        <span class="style-tag grow" id="lv-note"></span></div>
+      <div class="status bad" id="lv-err" style="margin:4px 0"></div>
+      <div class="askbox">
+        <div class="row"><input type="text" id="lv-q" class="grow" placeholder="Ask about this meeting, e.g. what was Peyman saying 2 minutes ago?">
+          <button class="btn" id="lv-ask">Ask</button></div>
+        <div class="row" style="gap:6px;margin-top:8px;flex-wrap:wrap">
+          <button class="chipbtn" data-q="What did I miss in the last 5 minutes?">What did I miss?</button>
+          <button class="chipbtn" data-q="Summarize the meeting so far in 5 bullets.">Summary so far</button>
+          <button class="chipbtn" data-q="Has anyone asked me to do anything so far?">Anything asked of me?</button>
+          <button class="chipbtn" data-q="What was the last question someone asked, and was it answered?">Last question</button></div>
+        <div id="lv-qa"></div>
+      </div>
+      <div class="row" style="margin:16px 0 6px"><div class="nl-h grow" style="margin:0">Live transcript</div><button class="link" id="lv-follow">Jump to latest</button></div>
+      <div id="live-tr" style="max-height:calc(100vh - 420px);min-height:180px;overflow-y:auto"></div></div>`;
+    $("stop-meet").onclick = async () => { await api().meeting_stop(); toast("Writing your notes…"); pollMeeting(); };
+    const ask = async (q) => {
+      q = (q || "").trim(); if (!q) return;
+      $("lv-q").value = ""; window.__pending = q; drawQA();
+      await api().meeting_ask_live(q); window.__pending = null;
+      MS = await api().meeting_status(); drawQA();
+    };
+    $("lv-ask").onclick = () => ask($("lv-q").value);
+    $("lv-q").onkeydown = (e) => { if (e.key === "Enter") ask(e.target.value); };
+    r.querySelectorAll(".chipbtn").forEach(b => b.onclick = () => ask(b.dataset.q));
+    $("lv-follow").onclick = () => { const t = $("live-tr"); t.scrollTop = t.scrollHeight; };
+  }
+  $("lv-title").textContent = m.title || "Untitled meeting";
+  $("lv-timer").textContent = clock(m.elapsed);
+  const lv = m.levels || {};
+  $("lv-you").style.width = Math.round(Math.min(1, (lv.You || 0)) * 100) + "%";
+  $("lv-others").style.width = Math.round(Math.min(1, (lv.Others || 0)) * 100) + "%";
+  $("lv-note").textContent = (m.backlog > 2 ? `Catching up (${m.backlog} pieces queued). ` : "") + "Text appears about 10 to 15 s after it is said. Let others know you are recording.";
+  const src = Object.entries(m.sources || {}).filter(([, v]) => v !== "ok").map(([k, v]) => `${k === "You" ? "Mic" : "Call audio"}: ${v}`);
+  if (m.error) src.push(m.error);
+  $("lv-err").textContent = src.join(" · ");
+  const t = $("live-tr"), atEnd = t.scrollHeight - t.scrollTop - t.clientHeight < 60;
   const lines = (m.entries || []).map(e => ({ t: e.t, who: e.who === "You" ? me : "Others", text: e.text }));
-  const src = Object.entries(m.sources || {}).filter(([, v]) => v !== "ok").map(([k, v]) => `${k === "You" ? "Mic" : "PC audio"}: ${v}`).join(" · ");
-  const keep = $("live-tr") ? $("live-tr").scrollHeight - $("live-tr").scrollTop - $("live-tr").clientHeight < 40 : true;
-  r.innerHTML = `<div class="row"><span class="rec-dot"></span><div class="mh-title grow">${esc(m.title || "Untitled meeting")}</div><span class="timer">${clock(m.elapsed)}</span></div>
-    <div class="people-row">${[me, ...(m.attendees || [])].map(n => `<span class="pchip">${av(n)}${esc(n)}</span>`).join("")}</div>
-    <div class="row" style="margin-bottom:12px"><span class="style-tag grow">Let others know you are recording. Names are added when the notes are written.</span>
-      <button class="btn ghost" id="catchup">What did I miss?</button><button class="btn" id="stop-meet" style="background:var(--danger)">Stop</button></div>
-    ${src ? `<div class="status bad" style="margin-bottom:8px">${esc(src)}</div>` : ""}
-    <div id="catchup-out">${window.__catch || ""}</div>
-    <div id="live-tr" style="max-height:calc(100vh - 330px);overflow-y:auto">${blocks(lines) || '<p class="style-tag">Listening. Text appears about every 30 seconds.</p>'}</div>`;
-  if (keep) { const t = $("live-tr"); t.scrollTop = t.scrollHeight; }
-  $("stop-meet").onclick = async () => { await api().meeting_stop(); window.__catch = ""; toast("Writing your notes…"); pollMeeting(); };
-  $("catchup").onclick = async () => { window.__catch = '<div class="catchup">Catching up…</div>'; $("catchup-out").innerHTML = window.__catch; const x = await api().meeting_catchup(); window.__catch = `<div class="catchup">${esc(x.text || x.error || "")}</div>`; $("catchup-out").innerHTML = window.__catch; };
+  const html = blocks(lines) || '<p class="style-tag">Listening…</p>';
+  if (t.__html !== html) { t.innerHTML = html; t.__html = html; if (atEnd) t.scrollTop = t.scrollHeight; }
+  drawQA();
+}
+function drawQA() {
+  const el = $("lv-qa"); if (!el) return;
+  const qa = [...((MS && MS.qa) || [])].reverse();
+  let html = window.__pending ? `<div class="qa"><div class="q">${esc(window.__pending)}</div><div class="a style-tag">Thinking…</div></div>` : "";
+  html += qa.slice(0, 4).map(x => `<div class="qa"><div class="q">${esc(x.q)} <span class="style-tag">· at ${clock(x.t)}</span></div><div class="a">${linkTimes(x.a)}</div></div>`).join("");
+  if (el.__html !== html) { el.innerHTML = html; el.__html = html; el.querySelectorAll("[data-seek]").forEach(b => b.onclick = () => seekLive(+b.dataset.seek)); }
+}
+function linkTimes(text) {
+  return esc(text).replace(/\*\*(.+?)\*\*/g, "<b>$1</b>").replace(/\n/g, "<br>")
+    .replace(/\[(\d{1,3}):(\d{2})\]/g, (all, mm, ss) => `<button class="cite" data-seek="${+mm * 60 + +ss}">${mm}:${ss}</button>`);
+}
+function seekLive(sec) {
+  const blk = [...document.querySelectorAll("#live-tr .blk, #tr-body .blk")].reverse().find(b => +b.dataset.t <= sec) || document.querySelector(".blk");
+  if (blk) { blk.scrollIntoView({ block: "center" }); blk.classList.add("flash"); setTimeout(() => blk.classList.remove("flash"), 1800); }
 }
 
 function mdSummary(src, done) {
@@ -547,6 +610,10 @@ function renderMeeting(r) {
   r.innerHTML = `<div class="mh-title" contenteditable="true" id="mh-title" spellcheck="false">${esc(m.title)}</div>
     <div class="style-tag" style="margin-top:4px">${new Date(m.started * 1000).toLocaleString(undefined, { weekday: "long", month: "long", day: "numeric", hour: "numeric", minute: "2-digit" })} · ${Math.max(1, Math.round(m.duration / 60))} min · ${m.words} words</div>
     <div class="people-row">${[...people, ...speakers].map(n => `<span class="pchip">${av(n)}${esc(n)}</span>`).join("")}</div>
+    <div class="askbox" style="margin:14px 0 10px">
+      <div class="row"><input type="text" id="mq" class="grow" placeholder="Ask about this meeting, e.g. what did they say about payment?"><button class="btn" id="mq-go">Ask</button></div>
+      <div class="row" style="gap:6px;flex-wrap:wrap;margin-top:8px">${["What are my action items?", "What was decided?", "What questions are still open?"].map(c => `<button class="chipbtn" data-mq="${c}">${c}</button>`).join("")}</div>
+      <div id="mq-out"></div></div>
     <div class="row" style="justify-content:space-between;align-items:flex-end">
       <div class="tabs" style="margin:0;border:0">${["summary", "transcript", "notes"].map(t => `<button data-tab="${t}" class="${TAB === t ? "on" : ""}">${{ summary: "Summary", transcript: "Transcript", notes: "My notes" }[t]}</button>`).join("")}</div>
       <div class="row" style="gap:6px;margin-bottom:6px"><button class="icon-btn" title="Copy" id="md-copy">${ICON_COPY}</button><button class="icon-btn" title="Open file" id="md-open"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 3h7v7M21 3l-9 9M19 14v5a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2h5"/></svg></button><button class="icon-btn" title="Delete" id="md-del">${ICON_DEL}</button></div>
@@ -570,6 +637,23 @@ function renderMeeting(r) {
     let tmr; $("my-notes").oninput = (e) => { clearTimeout(tmr); tmr = setTimeout(async () => { d.my_notes = e.target.value; await api().meeting_save_notes(SEL, d.my_notes); toast("Saved"); }, 700); };
   }
   r.querySelectorAll("[data-tab]").forEach(b => b.onclick = () => { TAB = b.dataset.tab; renderMeeting(r); });
+  const drawMQ = () => {
+    const qa = d.__qa || [];
+    $("mq-out").innerHTML = qa.map(x => `<div class="qa"><div class="q">${esc(x.q)}</div><div class="a">${x.a === null ? '<span class="style-tag">Thinking…</span>' : linkTimes(x.a)}</div></div>`).join("");
+    $("mq-out").querySelectorAll("[data-seek]").forEach(b => b.onclick = () => { TAB = "transcript"; renderMeeting(r); seekLive(+b.dataset.seek); });
+  };
+  const askMQ = async (q) => {
+    q = (q || "").trim(); if (!q) return;
+    const mid = SEL, item = { q, a: null };
+    d.__qa = [item, ...(d.__qa || [])].slice(0, 5); $("mq").value = ""; drawMQ();
+    const res = await api().meeting_ask(mid, q);
+    item.a = res.text || "No answer.";
+    if (SEL === mid && $("mq-out")) drawMQ();
+  };
+  $("mq").onkeydown = (e) => { if (e.key === "Enter") askMQ(e.target.value); };
+  $("mq-go").onclick = () => askMQ($("mq").value);
+  r.querySelectorAll("[data-mq]").forEach(b => b.onclick = () => askMQ(b.dataset.mq));
+  drawMQ();
   $("mh-title").onkeydown = (e) => { if (e.key === "Enter") { e.preventDefault(); e.target.blur(); } };
   $("mh-title").onblur = async (e) => { const t = e.target.textContent.trim(); if (t && t !== m.title) { m.title = await api().meeting_rename(SEL, t); ML = await api().meetings(); renderList(); toast("Renamed"); } };
   $("md-copy").onclick = async () => { await api().copy(`# ${m.title}\n\n${d.summary}`); toast("Summary copied"); };

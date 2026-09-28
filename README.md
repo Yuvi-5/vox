@@ -77,8 +77,13 @@ Vox can record a meeting from your mic and your PC's audio (Zoom, Teams, Meet, a
 
 1. Open Vox → **Notes** → **Start notes**. Optionally type the meeting title and the people in it (names help Vox label who said what).
 2. Tell people you are recording.
-3. Click **Stop** when the meeting ends. After about a minute you get a summary, key points, decisions, action items, open questions, who said what, and the full transcript. Notes are also saved as Markdown files in `Documents\Vox Notes`.
-4. **Ask about your meetings** (box at the top left) answers questions across all your meetings, with links to the moment it came from.
+3. **During the meeting**
+   - The live transcript fills in about 10 to 15 seconds behind the speaker. Two meters show that your mic and the call audio are both being heard.
+   - **Ask** box: type anything, e.g. *"what was Peyman saying about payment 2 minutes ago?"*, or tap *What did I miss?*. Answers include times; click a time to jump to that line.
+4. Click **Stop** when the meeting ends. Vox re-transcribes the whole recording with a more accurate model, then writes the notes (1 to 3 minutes): summary, discussion by topic, decisions, action items, open questions, next steps, who said what, and the full transcript. Notes are also saved as Markdown files in `Documents\Vox Notes`.
+5. Each saved meeting has its own **Ask about this meeting** box. **Ask about your meetings** (top left) searches across all of them.
+
+**Tips:** wear headphones if you can, so the call audio does not leak into your mic. Audio is kept only until the notes are written, then deleted.
 
 **Calendar (optional):** Notes → **Calendar** → **Connect Google Calendar**, then sign in. Google shows *"Google hasn't verified this app"* because Vox is a free personal project: click **Advanced** → **Go to Vox**. Vox only reads events. Some school and work accounts block unverified apps; in that case type the title and people when you start notes, or paste an Outlook ICS link instead.
 
@@ -92,7 +97,7 @@ Groq's free plan (per key, per day, at the time of writing):
 |---|---|---|
 | Speech to text | 2,000 requests, 8 hours of audio | About 2,000 dictations a day |
 | AI cleanup | 1,000 requests | About 1,000 cleaned dictations a day. After that Vox still pastes the raw transcript |
-| Meeting notes | 1,000 requests, 200K tokens | A 1-hour meeting uses about 2 hours of audio quota |
+| Meeting notes | 1,000 requests, 200K tokens | A 1-hour meeting uses about 2 hours of live audio quota, plus the final accurate pass on whisper-large-v3 |
 
 ## 8. Troubleshooting
 

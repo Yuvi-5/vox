@@ -13,7 +13,9 @@ import vox_core as core
 
 
 def _setup_logging(name):
-    logging.basicConfig(filename=os.path.join(core.data_dir(), name), filemode="w", level=logging.INFO,
+    from logging.handlers import RotatingFileHandler
+    handler = RotatingFileHandler(os.path.join(core.data_dir(), name), maxBytes=1_000_000, backupCount=2, encoding="utf-8")
+    logging.basicConfig(handlers=[handler], level=logging.INFO,
                         format="%(asctime)s %(levelname)s %(name)s: %(message)s")
     log = logging.getLogger("vox")
     sys.excepthook = lambda *e: log.error("uncaught", exc_info=e)

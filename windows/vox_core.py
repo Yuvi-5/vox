@@ -4,6 +4,7 @@ import json
 import os
 import re
 import sys
+import time
 import wave
 
 import requests
@@ -234,6 +235,21 @@ class GroqError(Exception):
         self.code = code
 
 
+def _post(url, retries=2, **kw):
+    """POST with a quick retry on dropped connections (flaky Wi-Fi, VPNs, antivirus TLS inspection)."""
+    for attempt in range(retries + 1):
+        try:
+            if "files" in kw:   # file objects must be re-sent from the start
+                for name, spec in kw["files"].items():
+                    if hasattr(spec[1], "seek"):
+                        spec[1].seek(0)
+            return requests.post(url, **kw)
+        except (requests.ConnectionError, requests.Timeout):
+            if attempt == retries:
+                raise
+            time.sleep(0.7 * (attempt + 1))
+
+
 def _check(r):
     if r.status_code >= 400:
         try:
@@ -251,7 +267,7 @@ def transcribe(cfg, wav_bytes):
     prompt = whisper_prompt(dictionary_terms(cfg))
     if prompt:
         data["prompt"] = prompt
-    r = requests.post(
+    r = _post(
         f"{BASE}/audio/transcriptions",
         headers={"Authorization": f"Bearer {cfg['api_key']}"},
         data=data,
@@ -261,31 +277,35 @@ def transcribe(cfg, wav_bytes):
     return _check(r).get("text", "").strip()
 
 
-def transcribe_segments(cfg, wav_bytes, prompt_extra=""):
-    """Whisper with sentence-level timestamps: [(start_s, end_s, text), ...]."""
-    data = {"model": cfg.get("stt_model") or DEFAULT_STT, "response_format": "verbose_json", "temperature": "0"}
+def transcribe_segments(cfg, wav_bytes, prompt=None, model=None):
+    """Whisper with sentence-level timestamps and quality scores.
+
+    Returns [{"start", "end", "text", "logprob", "no_speech", "compression"}, ...].
+    `prompt` is passed as-is (for meetings: the previous sentences, which keeps Whisper consistent).
+    """
+    data = {"model": model or cfg.get("stt_model") or DEFAULT_STT, "response_format": "verbose_json", "temperature": "0"}
     if cfg.get("language"):
         data["language"] = cfg["language"]
-    prompt = whisper_prompt(([prompt_extra] if prompt_extra else []) + dictionary_terms(cfg))
     if prompt:
-        data["prompt"] = prompt
-    r = requests.post(
+        data["prompt"] = prompt[-800:]
+    r = _post(
         f"{BASE}/audio/transcriptions",
         headers={"Authorization": f"Bearer {cfg['api_key']}"},
         data=data,
         files={"file": ("audio.wav", wav_bytes, "audio/wav")},
-        timeout=120,
+        timeout=180,
     )
     res = _check(r)
     segs = res.get("segments") or []
     if not segs and res.get("text"):
-        return [(0.0, 0.0, res["text"].strip())]
+        return [{"start": 0.0, "end": 0.0, "text": res["text"].strip(), "logprob": 0.0, "no_speech": 0.0, "compression": 1.0}]
     out = []
     for sg in segs:
         t = (sg.get("text") or "").strip()
-        if not t or sg.get("no_speech_prob", 0) > 0.8:
-            continue
-        out.append((float(sg.get("start", 0)), float(sg.get("end", 0)), t))
+        if t:
+            out.append({"start": float(sg.get("start", 0)), "end": float(sg.get("end", 0)), "text": t,
+                        "logprob": float(sg.get("avg_logprob", 0) or 0), "no_speech": float(sg.get("no_speech_prob", 0) or 0),
+                        "compression": float(sg.get("compression_ratio", 1) or 1)})
     return out
 
 
@@ -303,7 +323,7 @@ def cleanup(cfg, raw, style, app_label):
     if "gpt-oss" in model:
         body["reasoning_effort"] = "low"
         body["include_reasoning"] = False
-    r = requests.post(
+    r = _post(
         f"{BASE}/chat/completions",
         headers={"Authorization": f"Bearer {cfg['api_key']}"},
         json=body,
