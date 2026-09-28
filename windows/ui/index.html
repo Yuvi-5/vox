@@ -23,7 +23,7 @@ body { font: 14px/1.5 "Segoe UI Variable Text", "Segoe UI", system-ui, sans-seri
        display: grid; grid-template-columns: 220px 1fr; overflow: hidden; }
 aside { background: var(--side); padding: 22px 14px; display: flex; flex-direction: column; gap: 4px; }
 .brand { display: flex; align-items: center; gap: 10px; font-weight: 650; font-size: 18px; padding: 0 10px 18px; }
-.logo { width: 30px; height: 30px; border-radius: 9px; background: var(--accent); display: grid; place-items: center; }
+.logo { width: 30px; height: 30px; border-radius: 9px; background: linear-gradient(135deg, #3D6BFF, #7A4DFF); display: grid; place-items: center; }
 nav button { all: unset; display: flex; align-items: center; gap: 10px; padding: 9px 12px; border-radius: 9px; cursor: pointer; color: var(--muted); font-weight: 500; }
 nav button:hover { background: var(--panel); color: var(--text); }
 nav button.active { background: var(--panel); color: var(--text); box-shadow: var(--shadow); }
@@ -166,7 +166,7 @@ textarea.mynotes { width: 100%; min-height: 380px; font: inherit; color: var(--t
 </head>
 <body>
 <aside>
-  <div class="brand"><div class="logo"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round"><rect x="9" y="3" width="6" height="11" rx="3" fill="#fff" stroke="none"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg></div>Vox</div>
+  <div class="brand"><div class="logo"><svg viewBox="0 0 512 512" width="20" height="20"><path d="M140 150 L256 380 L372 150" fill="none" stroke="#fff" stroke-width="64" stroke-linecap="round" stroke-linejoin="round"/><circle cx="386" cy="128" r="36" fill="#FF5A5F" stroke="#fff" stroke-width="12"/></svg></div>Vox</div>
   <nav>
     <button data-page="home" class="active"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 11l9-7 9 7v9a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"/></svg>Home</button>
     <button data-page="notes"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="3" width="16" height="18" rx="2"/><path d="M8 8h8M8 12h8M8 16h5"/></svg>Notes<span class="beta">Beta</span></button>

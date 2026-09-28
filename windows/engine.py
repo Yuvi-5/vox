@@ -64,7 +64,8 @@ def dot(color):
     return img
 
 
-ICONS = {"idle": dot("#5F6368"), "rec": dot("#E53935"), "busy": dot("#F59E0B")}
+import logo
+ICONS = {k: logo.draw(64, k) for k in ("idle", "rec", "busy")}
 
 
 def window_command():
