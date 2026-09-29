@@ -1,0 +1,137 @@
+import os
+import sys
+
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "windows"))
+
+import vox_core as core
+
+
+# ---------------------------------------------------------------- sanitize
+
+def test_sanitize_strips_think_block():
+    assert core.sanitize("<think>hmm\nplan</think>Hello there") == "Hello there"
+
+
+def test_sanitize_strips_transcript_tags():
+    assert core.sanitize("<transcript>Hi</transcript>") == "Hi"
+
+
+def test_sanitize_strips_wrapping_quotes_only_when_single_pair():
+    assert core.sanitize('"Hello"') == "Hello"
+    assert core.sanitize('"a" and "b"') == '"a" and "b"'
+
+
+def test_sanitize_handles_none_and_empty():
+    assert core.sanitize(None) == ""
+    assert core.sanitize("  ") == ""
+
+
+# ------------------------------------------------------- apply_replacements
+
+def test_replacement_is_case_insensitive_and_whole_word():
+    assert core.apply_replacements("Say Wispr flow now", {"wispr flow": "Wispr Flow"}) == "Say Wispr Flow now"
+    assert core.apply_replacements("catalog", {"cat": "dog"}) == "catalog"
+
+
+def test_replacement_treats_regex_chars_literally():
+    assert core.apply_replacements("a.b axb", {"a.b": "X"}) == "X axb"
+
+
+def test_replacement_right_side_backslashes_are_literal():
+    assert core.apply_replacements("path", {"path": r"C:\new\1"}) == r"C:\new\1"
+
+
+def test_replacement_empty_map_is_noop():
+    assert core.apply_replacements("same", {}) == "same"
+
+
+# -------------------------------------------------------------- looks_valid
+
+def test_looks_valid_accepts_normal_cleanup():
+    assert core.looks_valid("um hello there", "Hello there.")
+
+
+def test_looks_valid_rejects_empty():
+    assert not core.looks_valid("hello", "")
+    assert not core.looks_valid("hello", "   ")
+    assert not core.looks_valid("hello", None)
+
+
+def test_looks_valid_rejects_answer_sized_output():
+    raw = "what is the capital of france"
+    assert not core.looks_valid(raw, "x" * (int(len(raw) * 1.6) + 41))
+    assert core.looks_valid(raw, "x" * (int(len(raw) * 1.6) + 40))
+
+
+# ----------------------------------------------------------- whisper_prompt
+
+def test_whisper_prompt_empty():
+    assert core.whisper_prompt([]) == ""
+
+
+def test_whisper_prompt_joins_with_trailing_period():
+    assert core.whisper_prompt(["Alice", "Vox"]) == "Alice, Vox."
+
+
+def test_whisper_prompt_respects_600_char_budget():
+    terms = ["w" * 100] * 10
+    out = core.whisper_prompt(terms)
+    assert len(out) <= 601
+    assert out.endswith(".")
+    assert out.count("w" * 100) < 10
+
+
+# -------------------------------------------------------- dictionary_terms
+
+def test_dictionary_terms_people_and_plain_lines():
+    cfg = {"people": [" Alice ", ""], "dictionary": ["Kubernetes", "  ", "# comment"]}
+    assert core.dictionary_terms(cfg) == ["Alice", "Kubernetes"]
+
+
+def test_dictionary_terms_uses_right_side_of_arrow_and_dedupes():
+    cfg = {"people": ["Bob"], "dictionary": ["bobb => Bob", "x =>", "Bob"]}
+    assert core.dictionary_terms(cfg) == ["Bob"]
+
+
+def test_dictionary_terms_empty_config():
+    assert core.dictionary_terms({}) == []
+
+
+# ------------------------------------------------------------- replacements
+
+def test_replacements_parses_arrow_lines_only():
+    cfg = {"dictionary": ["wrong => Right", "Plain", "# a => b", " => empty", "k=>v"]}
+    assert core.replacements(cfg) == {"wrong": "Right", "k": "v"}
+
+
+def test_replacements_empty():
+    assert core.replacements({}) == {}
+
+
+# --------------------------------------------- is_silence_hallucination
+
+def test_silence_phrases_detected_ignoring_case_and_punctuation():
+    for t in ["Thank you.", "THANKS FOR WATCHING!", "you", "Bye!", " Thank you for watching. "]:
+        assert core.is_silence_hallucination(t), t
+
+
+def test_real_speech_not_flagged():
+    assert not core.is_silence_hallucination("Thank you for the update on the budget")
+    assert not core.is_silence_hallucination("")
+
+
+# ---------------------------------------------------------------- style_for
+
+def test_style_for_app_match_is_case_insensitive():
+    cfg = {"app_styles": {"Outlook.exe": "formal"}, "default_style": "neutral"}
+    assert core.style_for(cfg, "OUTLOOK.EXE") == "formal"
+
+
+def test_style_for_falls_back_to_default():
+    cfg = {"app_styles": {}, "default_style": "casual"}
+    assert core.style_for(cfg, "unknown.exe") == "casual"
+    assert core.style_for(cfg, None) == "casual"
+
+
+def test_style_for_defaults_to_neutral_when_unset():
+    assert core.style_for({}, "x.exe") == "neutral"
