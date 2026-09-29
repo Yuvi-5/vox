@@ -211,7 +211,7 @@ public final class GroqClient {
     static String applyReplacements(String text, Map<String, String> repl) {
         String out = text;
         for (Map.Entry<String, String> e : repl.entrySet()) {
-            Pattern p = Pattern.compile("(?i)(?<![\\p{L}\\p{N}])" + Pattern.quote(e.getKey()) + "(?![\\p{L}\\p{N}])");
+            Pattern p = Pattern.compile("(?iu)(?<![\\p{L}\\p{N}_])" + Pattern.quote(e.getKey()) + "(?![\\p{L}\\p{N}_])");
             out = p.matcher(out).replaceAll(Matcher.quoteReplacement(e.getValue()));
         }
         return out;

@@ -64,35 +64,12 @@ public final class Prefs {
 
     /** Plain dictionary terms (lines without "=>"). */
     public List<String> dictionaryTerms() {
-        List<String> out = new ArrayList<>();
-        for (String line : peopleRaw().split("\n")) {
-            String l = line.trim();
-            if (!l.isEmpty() && !l.startsWith("#") && !out.contains(l)) out.add(l);
-        }
-        for (String line : dictionaryRaw().split("\n")) {
-            String l = line.trim();
-            if (l.isEmpty() || l.startsWith("#")) continue;
-            if (l.contains("=>")) {
-                String right = l.substring(l.indexOf("=>") + 2).trim();
-                if (!right.isEmpty()) out.add(right);
-            } else {
-                out.add(l);
-            }
-        }
-        return out;
+        return Terms.terms(peopleRaw(), dictionaryRaw());
     }
 
     /** Forced replacements from lines of the form "wrong => right". */
     public Map<String, String> replacements() {
-        Map<String, String> out = new LinkedHashMap<>();
-        for (String line : dictionaryRaw().split("\n")) {
-            String l = line.trim();
-            if (l.startsWith("#") || !l.contains("=>")) continue;
-            String wrong = l.substring(0, l.indexOf("=>")).trim();
-            String right = l.substring(l.indexOf("=>") + 2).trim();
-            if (!wrong.isEmpty()) out.put(wrong, right);
-        }
-        return out;
+        return Terms.replacements(dictionaryRaw());
     }
 
     /** Style for a package name, falling back to the default style. */

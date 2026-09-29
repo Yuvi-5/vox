@@ -223,7 +223,7 @@ def system_prompt(style, terms, app_label):
     ]
     if terms:
         rules.append("- Spell these names and terms exactly as written: " + ", ".join(terms[:150]) + ".")
-    rules.append("- Style: " + STYLE_TEXT.get(style, "neutral. Standard capitalization and punctuation."))
+    rules.append("- Style: " + STYLE_TEXT.get((style or "").lower(), "neutral. Standard capitalization and punctuation."))
     text = "\n".join(rules) + "\n"
     if app_label:
         text += f"\nThe text will be typed into the app: {app_label}.\n"

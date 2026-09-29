@@ -1,0 +1,57 @@
+"""Checks vox_core against spec/golden.txt. The Android app runs the same file (ParityTest.java), so the two
+implementations of the cleanup helpers cannot drift apart without a test failing."""
+import os
+
+import pytest
+
+import vox_core as core
+
+GOLDEN = os.path.join(os.path.dirname(__file__), "..", "spec", "golden.txt")
+
+
+def unesc(s):
+    out, i = [], 0
+    while i < len(s):
+        c = s[i]
+        if c == "\\" and i + 1 < len(s):
+            out.append({"n": "\n", "t": "\t", "\\": "\\"}.get(s[i + 1], s[i + 1]))
+            i += 2
+        else:
+            out.append(c)
+            i += 1
+    return "".join(out)
+
+
+def cases():
+    with open(GOLDEN, encoding="utf-8") as f:
+        for n, line in enumerate(f, 1):
+            line = line.rstrip("\n")
+            if line and not line.startswith("#"):
+                kind, *fields = [unesc(x) for x in line.split("\t")]
+                yield pytest.param(kind, fields, id=f"{n}-{kind}")
+
+
+def items(field, sep="|"):
+    return [x for x in field.split(sep) if x]
+
+
+@pytest.mark.parametrize("kind,f", cases())
+def test_golden(kind, f):
+    if kind == "sanitize":
+        assert core.sanitize(f[0]) == f[1]
+    elif kind == "looks_valid":
+        assert core.looks_valid(f[0], f[1]) == (f[2] == "true")
+    elif kind == "replace":
+        repl = dict(p.split("=>", 1) for p in items(f[1], ";"))
+        assert core.apply_replacements(f[0], repl) == f[2]
+    elif kind == "whisper":
+        assert core.whisper_prompt(items(f[0])) == f[1]
+    elif kind == "terms":
+        cfg = {"people": items(f[0]), "dictionary": f[1].split("|") if f[1] else []}
+        assert "|".join(core.dictionary_terms(cfg)) == f[2]
+    elif kind == "prompt":
+        assert core.system_prompt(f[0], items(f[1]), f[2]) == f[3]
+    elif kind == "silence":
+        assert core.is_silence_hallucination(f[0]) == (f[1] == "true")
+    else:
+        pytest.fail(f"unknown case kind {kind}")
