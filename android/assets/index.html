@@ -139,6 +139,7 @@ nav button.on .pill { background:var(--accent-soft); }
   <h2>Dictation</h2>
   <div class="card list">
     <div class="item"><div class="grow"><div class="t">AI cleanup</div><div class="d">Removes fillers, fixes punctuation, applies corrections</div></div><label class="switch"><input type="checkbox" id="cleanup"><span></span></label></div>
+    <div class="item"><div class="grow"><div class="t">Keep dictation history</div><div class="d">Saves what you dictate on this phone. Off saves nothing</div></div><label class="switch"><input type="checkbox" id="keep-history"><span></span></label></div>
     <div class="item"><div class="grow"><div class="t">Bubble only while typing</div><div class="d">Hide the bubble when no text box is selected</div></div><label class="switch"><input type="checkbox" id="only-typing"><span></span></label></div>
     <div class="item"><div class="grow"><div class="t">Language</div><div class="d">Auto can switch on short phrases</div></div>
       <select class="inline" id="language"><option value="">Auto</option><option value="en">English</option><option value="ur">Urdu</option><option value="hi">Hindi</option><option value="ar">Arabic</option><option value="fr">French</option><option value="es">Spanish</option></select></div>
@@ -300,6 +301,7 @@ function renderSettings() {
   if (document.activeElement !== $("key")) $("key").value = c.api_key || "";
   if (document.activeElement !== $("base-url")) $("base-url").value = isGroq() ? "" : c.base_url;
   $("cleanup").checked = c.cleanup !== false; $("only-typing").checked = c.only_typing !== false;
+  $("keep-history").checked = c.keep_history !== false;
   $("language").value = c.language || ""; $("service").checked = S.service;
   $("stt").value = c.stt_model || ""; $("llm").value = c.llm_model || "";
   $("about").textContent = `Vox ${S.version} · audio goes to ${isGroq() ? "Groq with your key" : "your own server"} · everything else stays on this phone`;
@@ -328,6 +330,7 @@ $("base-url").onchange = () => {
 $("key-get").onclick = () => V.openUrl("https://console.groq.com/keys");
 $("cleanup").onchange = (e) => save({ cleanup: e.target.checked }, "Saved");
 $("only-typing").onchange = (e) => save({ only_typing: e.target.checked }, "Saved");
+$("keep-history").onchange = (e) => save({ keep_history: e.target.checked }, "Saved");
 $("language").onchange = (e) => save({ language: e.target.value }, "Saved");
 $("service").onchange = (e) => V.setService(e.target.checked);
 $("battery").onclick = () => V.openBattery();

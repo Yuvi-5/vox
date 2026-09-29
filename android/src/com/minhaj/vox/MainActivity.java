@@ -58,7 +58,7 @@ public class MainActivity extends Activity {
         WebSettings s = web.getSettings();
         s.setJavaScriptEnabled(true);
         s.setDomStorageEnabled(true);
-        s.setAllowFileAccess(true);
+        s.setAllowFileAccess(false);   // the UI is loaded from assets, which does not need file access
         web.setWebChromeClient(new WebChromeClient());
         web.setWebViewClient(new WebViewClient());
         web.addJavascriptInterface(new Bridge(), "Vox");
@@ -118,6 +118,7 @@ public class MainActivity extends Activity {
                 cfg.put("base_url", prefs.baseUrl());
                 cfg.put("language", prefs.language());
                 cfg.put("cleanup", prefs.cleanupEnabled());
+                cfg.put("keep_history", prefs.keepHistory());
                 cfg.put("only_typing", prefs.onlyWhenTyping());
                 cfg.put("default_style", prefs.defaultStyle());
                 cfg.put("stt_model", prefs.sttModel());
@@ -149,6 +150,7 @@ public class MainActivity extends Activity {
                 }
                 if (c.has("language")) e.putString("language", c.getString("language"));
                 if (c.has("cleanup")) e.putBoolean("cleanup", c.getBoolean("cleanup"));
+                if (c.has("keep_history")) e.putBoolean("keep_history", c.getBoolean("keep_history"));
                 if (c.has("only_typing")) e.putBoolean("only_typing", c.getBoolean("only_typing"));
                 if (c.has("default_style")) e.putString("default_style", c.getString("default_style"));
                 if (c.has("stt_model")) e.putString("stt_model", c.getString("stt_model"));

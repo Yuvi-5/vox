@@ -49,6 +49,8 @@ public final class Prefs {
     public String peopleRaw() { return sp.getString("people", ""); }
     public String appStylesRaw() { return sp.getString("app_styles", DEFAULT_APP_STYLES); }
     public String defaultStyle() { return nonEmpty(sp.getString("default_style", ""), "neutral"); }
+    /** When false, nothing dictated is saved on the phone. */
+    public boolean keepHistory() { return sp.getBoolean("keep_history", true); }
     public boolean cleanupEnabled() { return sp.getBoolean("cleanup", true); }
     public boolean onlyWhenTyping() { return sp.getBoolean("only_typing", true); }
     public int bubbleX() { return sp.getInt("bubble_x", -1); }
@@ -110,6 +112,7 @@ public final class Prefs {
     // ---- history ----
 
     public void addHistory(String app, String raw, String clean, double secs) {
+        if (!keepHistory()) return;
         try {
             JSONArray arr = new JSONArray(sp.getString("history", "[]"));
             JSONObject o = new JSONObject();
