@@ -180,6 +180,22 @@ public final class GroqClient {
         return t;
     }
 
+    /** Whisper tends to invent these phrases on silence. */
+    static boolean isSilenceHallucination(String t) {
+        String s = t.toLowerCase(Locale.ROOT).replaceAll("[^a-z ]", "").trim();
+        return s.equals("thank you") || s.equals("thanks for watching") || s.equals("you")
+                || s.equals("thank you for watching") || s.equals("bye");
+    }
+
+    /** True when trying the same request again could succeed (server trouble, rate limit, dropped connection). */
+    static boolean isRetryable(IOException e) {
+        if (e instanceof ApiException) {
+            int c = ((ApiException) e).code;
+            return c >= 500 || c == 429 || c == 408;
+        }
+        return true;
+    }
+
     /** Guards against the model replying to the transcript instead of cleaning it. */
     static boolean looksValid(String raw, String cleaned) {
         if (cleaned == null || cleaned.trim().isEmpty()) return false;

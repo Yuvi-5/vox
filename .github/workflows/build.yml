@@ -68,6 +68,13 @@ jobs:
         run: |
           if [ -n "$ANDROID_KEYSTORE_B64" ]; then echo "$ANDROID_KEYSTORE_B64" | base64 -d > android/vox.keystore; echo "Using the project signing key";
           else echo "::warning::No ANDROID_KEYSTORE_B64 secret. A new key is generated, so this APK cannot update earlier installs."; fi
+      - name: Unit tests (pure helpers in GroqClient)
+        run: |
+          JAR="$ANDROID_HOME/platforms/android-34/android.jar"
+          mkdir -p android/build/test
+          javac -nowarn -encoding UTF-8 -cp "$JAR" -d android/build/test \
+            android/src/com/minhaj/vox/GroqClient.java android/test/com/minhaj/vox/GroqClientTest.java
+          java -cp "android/build/test:$JAR" com.minhaj.vox.GroqClientTest
       - name: Build APK
         run: BUILD_TOOLS="$ANDROID_HOME/build-tools/36.0.0" bash ./android/build.sh
       - uses: actions/upload-artifact@v4
