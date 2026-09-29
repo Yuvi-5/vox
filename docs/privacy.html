@@ -9,8 +9,8 @@
 <h2>Data stored on your PC</h2>
 <p>Your settings, Groq API key, dictation history, dictionary, meeting transcripts and notes are stored only on your computer, in <code>%APPDATA%\Vox</code> and in <code>Documents\Vox Notes</code>. Uninstalling Vox and deleting these folders removes them. On Android, settings, key and history are stored in the app's private storage and are removed when you uninstall the app.</p>
 
-<h2>Groq</h2>
-<p>To turn speech into text and to clean up text and write meeting notes, Vox sends your recorded audio and the resulting text to Groq (groq.com) using <b>your own</b> Groq API key. When you take meeting notes, the meeting title and attendee names are included so that names are spelled and labelled correctly. Groq's handling of this data is covered by Groq's own privacy policy and terms.</p>
+<h2>Groq, or your own server</h2>
+<p>To turn speech into text and to clean up text and write meeting notes, Vox sends your recorded audio and the resulting text to Groq (groq.com) using <b>your own</b> Groq API key. In Settings you can instead enter the address of your own OpenAI-compatible server (for example Whisper on your own computer, reached over your local network or Tailscale); then your audio, text and key go to that server and not to Groq. Plain <code>http</code> is only accepted for this device, your local network and Tailscale addresses; any other server must use <code>https</code>. Along with the text, Vox tells the cleanup model the name of the app you are typing into so it can match the tone. When you take meeting notes, the meeting title and attendee names are included so that names are spelled and labelled correctly. Groq's handling of this data is covered by Groq's own privacy policy and terms.</p>
 
 <h2>Google Calendar (optional)</h2>
 <p>If you choose <b>Connect Google Calendar</b>, Vox requests read-only access to your calendar events (scope <code>calendar.events.readonly</code>) and your email address. Vox reads event titles, start and end times, attendee names and email addresses, the organizer, and video-call links, for the next 7 days. Vox uses this only to:</p>
