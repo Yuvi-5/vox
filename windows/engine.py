@@ -44,18 +44,15 @@ MODIFIERS = set().union(*[KEY_ALIASES[k] for k in ("ctrl", "cmd", "alt", "shift"
 
 
 def foreground_app():
-    """Returns (exe name, window title) of the focused window."""
+    """Exe name of the focused window (never its title, which can hold private text)."""
     try:
         user32 = ctypes.windll.user32
         hwnd = user32.GetForegroundWindow()
         pid = ctypes.c_ulong()
         user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
-        length = user32.GetWindowTextLengthW(hwnd)
-        buf = ctypes.create_unicode_buffer(length + 1)
-        user32.GetWindowTextW(hwnd, buf, length + 1)
-        return psutil.Process(pid.value).name(), buf.value
+        return psutil.Process(pid.value).name()
     except Exception:
-        return "", ""
+        return ""
 
 
 def dot(color):
@@ -91,7 +88,7 @@ class Engine:
         self.busy = False
         self.chunks = []
         self.stream = None
-        self.target = ("", "")
+        self.target = ""
         self.started_at = 0.0
         self.state = "idle"   # read by the overlay: idle | rec | busy
         self.level = 0.0
@@ -146,6 +143,10 @@ class Engine:
         self.icon.stop()
         if self.overlay:
             self.overlay.stop()
+        try:
+            os.remove(os.path.join(core.data_dir(), "engine.json"))   # holds the control token
+        except OSError:
+            pass
         os._exit(0)
 
     def notify(self, msg):
@@ -231,7 +232,7 @@ class Engine:
             return
         self.recording = True
         self.set_state("rec")
-        log.info("recording started (app=%s)", self.target[0])
+        log.info("recording started (app=%s)", self.target)
 
     def _audio(self, indata, frames, t, status):
         self.chunks.append(bytes(indata))
@@ -272,16 +273,17 @@ class Engine:
         threading.Thread(target=self._process, args=(pcm,), daemon=True).start()
 
     def _process(self, pcm):
-        exe, title = self.target
+        exe = self.target
         secs = len(pcm) / (core.SAMPLE_RATE * 2)
         try:
-            raw, text = core.process(self.cfg, pcm, exe, title or exe)
+            raw, text = core.process(self.cfg, pcm, exe, exe)
             if text:
                 self.paste(text)
-                core.add_history({
-                    "t": time.time(), "app": exe, "title": title[:120], "raw": raw, "text": text,
-                    "words": len(text.split()), "secs": round(secs, 1),
-                })
+                if self.cfg.get("keep_history", True):
+                    core.add_history({
+                        "t": time.time(), "app": exe, "raw": raw, "text": text,
+                        "words": len(text.split()), "secs": round(secs, 1),
+                    })
         except core.ApiError as e:
             log.error("api error: %s", e)
             if e.code == 401:

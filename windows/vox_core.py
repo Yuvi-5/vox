@@ -11,6 +11,8 @@ from urllib.parse import urlparse
 
 import requests
 
+import secret
+
 BASE = "https://api.groq.com/openai/v1"
 DEFAULT_STT = "whisper-large-v3-turbo"
 DEFAULT_LLM = "openai/gpt-oss-20b"
@@ -24,6 +26,7 @@ DEFAULT_CONFIG = {
     "llm_model": DEFAULT_LLM,
     "language": "",
     "cleanup": True,
+    "keep_history": True,
     "default_style": "neutral",
     "dictionary": [],
     "people": [],
@@ -60,10 +63,12 @@ def config_path():
 
 
 def save_config(cfg):
+    """Writes the settings; the API key is stored protected by the Windows login (see secret.py)."""
     path = config_path()
     tmp = path + ".tmp"
+    on_disk = dict(cfg, api_key=secret.protect(cfg.get("api_key") or ""))
     with open(tmp, "w", encoding="utf-8") as f:
-        json.dump(cfg, f, indent=2)
+        json.dump(on_disk, f, indent=2)
     os.replace(tmp, path)
 
 
@@ -110,6 +115,10 @@ def load_config():
         cfg = json.load(f)
     merged = dict(DEFAULT_CONFIG)
     merged.update(cfg)
+    stored = merged.get("api_key") or ""
+    merged["api_key"] = secret.unprotect(stored)
+    if stored and not secret.is_protected(stored) and secret.available():
+        save_config(merged)   # a key typed into config.json by hand: protect it from now on
     return merged
 
 
