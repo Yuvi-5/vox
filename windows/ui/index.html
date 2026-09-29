@@ -260,8 +260,10 @@ textarea.mynotes { width: 100%; min-height: 380px; font: inherit; color: var(--t
     <h1>Settings</h1>
     <p class="sub">Changes apply within a second. No restart needed.</p>
     <div class="card list">
-      <div class="setting"><div><div class="t">Groq API key</div><div class="d">Free at console.groq.com/keys. Stored only on this PC.</div></div>
+      <div class="setting"><div><div class="t">API key</div><div class="d">Groq is free at console.groq.com/keys. Stored only on this PC. A server of your own may not need one.</div></div>
         <input type="password" id="key" style="width:260px"><button class="btn ghost" id="test-key">Test</button><span class="status" id="key-status"></span></div>
+      <div class="setting"><div><div class="t">Server address</div><div class="d">Groq by default. Point it at your own Whisper/LLM server (for example over Tailscale). Plain http is only allowed for this PC, your local network and Tailscale.</div></div>
+        <input type="text" id="base-url" style="width:260px" placeholder="https://api.groq.com/openai/v1"><span class="status" id="url-status"></span></div>
       <div class="setting"><div><div class="t">Dictation shortcut</div><div class="d">Hold to talk and release to insert. Double-tap for hands-free, then press once to finish (Esc cancels).</div></div><select id="hotkey"></select></div>
       <div class="setting"><div><div class="t">Your name</div><div class="d">Used to label your lines in meeting notes.</div></div><input type="text" id="your-name" style="width:220px" placeholder="e.g. Minhaj"></div>
       <div class="setting"><div><div class="t">Your calendar email</div><div class="d">So you are not listed as an attendee in your own meetings.</div></div><input type="text" id="my-email" style="width:220px" placeholder="you@gmail.com"></div>
@@ -309,7 +311,8 @@ function styleOptions(sel, value) { sel.innerHTML = STYLES.map(([v, l]) => `<opt
 function fmt(n) { return n >= 10000 ? (n / 1000).toFixed(1) + "k" : n.toLocaleString(); }
 
 function renderWelcome() {
-  $("welcome").style.display = S.config.api_key ? "none" : "block";
+  const groq = !S.config.base_url || S.config.base_url.indexOf("api.groq.com") >= 0;
+  $("welcome").style.display = (S.config.api_key || !groq) ? "none" : "block";
 }
 $("w-get").onclick = () => api().open_url("https://console.groq.com/keys");
 $("w-save").onclick = async () => {
@@ -407,6 +410,7 @@ $("add-app").onclick = async () => { let a = $("new-app").value.trim().toLowerCa
 function renderSettings() {
   const c = S.config;
   $("key").value = c.api_key || "";
+  $("base-url").value = c.base_url || "";
   $("hotkey").innerHTML = S.hotkeys.map(h => `<option value="${h.id}">${h.label}</option>`).join("") + (S.hotkey_id === "custom" ? `<option value="custom">Custom (config.json)</option>` : "");
   $("hotkey").value = S.hotkey_id;
   $("language").value = c.language || "";
@@ -421,8 +425,16 @@ function renderSettings() {
 $("key").onchange = () => { save({ api_key: $("key").value.trim() }); $("key-status").textContent = ""; };
 $("test-key").onclick = async () => {
   const s = $("key-status"); s.className = "status"; s.textContent = "Checking…";
-  const ok = await api().check_key($("key").value);
+  const ok = await api().check_key($("key").value, $("base-url").value.trim());
   s.className = "status " + (ok ? "ok" : "bad"); s.textContent = ok === null ? "No connection" : ok ? "Key works" : "Key rejected";
+};
+$("base-url").onchange = async () => {
+  const v = $("base-url").value.trim(), s = $("url-status");
+  const problem = v ? await api().endpoint_problem(v) : "";
+  if (problem) { s.className = "status bad"; s.textContent = problem; return; }
+  s.className = "status ok"; s.textContent = v ? "Saved" : "Using Groq";
+  save({ base_url: v });
+  renderWelcome();
 };
 $("hotkey").onchange = async (e) => { const label = await api().set_hotkey(e.target.value); if (label) { S.hotkey_id = e.target.value; toast("Shortcut: " + label); } };
 $("language").onchange = (e) => save({ language: e.target.value });

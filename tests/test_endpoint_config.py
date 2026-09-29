@@ -57,9 +57,9 @@ def test_old_config_without_base_url_still_uses_groq(tmp_path, monkeypatch):
 # --------------------------------------------------------------------- auth
 
 def test_auth_header_with_key_and_without():
-    assert core._auth({"api_key": " abc "}) == {"Authorization": "Bearer abc"}
-    assert core._auth({"api_key": ""}) == {}
-    assert core._auth({}) == {}
+    assert core.auth_headers({"api_key": " abc "}) == {"Authorization": "Bearer abc"}
+    assert core.auth_headers({"api_key": ""}) == {}
+    assert core.auth_headers({}) == {}
 
 
 # ------------------------------------------------------------- request URLs

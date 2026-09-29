@@ -213,8 +213,10 @@ class Engine:
 
     # ------------------------------------------------------------ recording
     def start(self):
-        if not self.cfg.get("api_key"):
-            self.notify("Add your Groq API key in Vox > Settings")
+        problem = core.endpoint_error(self.cfg) or (
+            "Add your API key in Vox > Settings" if core.key_missing(self.cfg) else "")
+        if problem:
+            self.notify(problem)
             open_window()
             return
         self.target = foreground_app()
@@ -280,12 +282,12 @@ class Engine:
                     "t": time.time(), "app": exe, "title": title[:120], "raw": raw, "text": text,
                     "words": len(text.split()), "secs": round(secs, 1),
                 })
-        except core.GroqError as e:
-            log.error("groq error: %s", e)
+        except core.ApiError as e:
+            log.error("api error: %s", e)
             if e.code == 401:
-                self.notify("Groq rejected the API key. Check Vox > Settings.")
+                self.notify("The server rejected the API key. Check Vox > Settings.")
             elif e.code == 429:
-                self.notify("Groq free limit reached. Try again shortly.")
+                self.notify("Rate limit reached. Try again shortly.")
             else:
                 self.notify(str(e))
         except requests.RequestException as e:
@@ -426,7 +428,7 @@ class Engine:
         threading.Thread(target=self._watch_calendar, daemon=True, name="calendar").start()
         self.icon.run_detached()
         log.info("engine started, hotkey=%s", self.cfg.get("hotkey"))
-        if not self.cfg.get("api_key"):
+        if core.key_missing(self.cfg) or core.endpoint_error(self.cfg):
             open_window()
         try:
             self.overlay = Overlay(self)

@@ -1,11 +1,13 @@
 """Platform-independent parts of Vox: config, Groq calls, prompt, text post-processing."""
 import io
+import ipaddress
 import json
 import os
 import re
 import sys
 import time
 import wave
+from urllib.parse import urlparse
 
 import requests
 
@@ -230,13 +232,15 @@ def pcm_to_wav(pcm_bytes):
 
 # ---------------------------------------------------------------------- groq
 
-class GroqError(Exception):
+class ApiError(Exception):
+    """The speech or cleanup server answered with an error status."""
+
     def __init__(self, code, msg):
         super().__init__(msg)
         self.code = code
 
 
-def _post(url, retries=2, **kw):
+def post_with_retry(url, retries=2, **kw):
     """POST with a quick retry on dropped connections (flaky Wi-Fi, VPNs, antivirus TLS inspection)."""
     for attempt in range(retries + 1):
         try:
@@ -256,20 +260,54 @@ def api_base(cfg):
     return (cfg.get("base_url") or "").strip().rstrip("/") or BASE
 
 
-def _auth(cfg):
+def auth_headers(cfg):
     """Authorization header, or none when no key is set (some self-hosted servers need no key)."""
     key = (cfg.get("api_key") or "").strip()
     return {"Authorization": f"Bearer {key}"} if key else {}
 
 
-def _check(r):
+def check_response(r):
     if r.status_code >= 400:
         try:
             msg = r.json()["error"]["message"]
         except Exception:
             msg = r.text
-        raise GroqError(r.status_code, f"Groq {r.status_code}: {msg}")
+        raise ApiError(r.status_code, f"API {r.status_code}: {msg}")
     return r.json()
+
+
+def is_private_host(host):
+    """True for addresses where plain http is acceptable: this PC, the home/office LAN and Tailscale."""
+    host = (host or "").strip("[]").lower().rstrip(".")
+    if not host:
+        return False
+    try:
+        ip = ipaddress.ip_address(host)
+    except ValueError:
+        # A name: single-label names, .local/.lan and Tailscale MagicDNS names never leave the private network.
+        return "." not in host or host.endswith((".local", ".lan", ".ts.net"))
+    return ip.is_loopback or ip.is_private or ip.is_link_local or ip in ipaddress.ip_network("100.64.0.0/10")
+
+
+def endpoint_error(cfg):
+    """Why the configured endpoint cannot be used, or '' when it is fine.
+
+    The API key and your voice go to this address, so plain http is only allowed for private hosts.
+    """
+    url = (cfg.get("base_url") or "").strip()
+    if not url:
+        return ""
+    u = urlparse(url)
+    if u.scheme not in ("http", "https") or not u.hostname:
+        return "The server address must start with http:// or https://"
+    if u.scheme == "http" and not is_private_host(u.hostname):
+        return "Plain http is only allowed for this PC, your local network or Tailscale. Use https:// for other servers."
+    return ""
+
+
+def key_missing(cfg):
+    """True when Groq is the endpoint and no key is set. A self-hosted server may need no key."""
+    return not (cfg.get("api_key") or "").strip() and api_base(cfg) == BASE
 
 
 def transcribe(cfg, wav_bytes):
@@ -279,14 +317,14 @@ def transcribe(cfg, wav_bytes):
     prompt = whisper_prompt(dictionary_terms(cfg))
     if prompt:
         data["prompt"] = prompt
-    r = _post(
+    r = post_with_retry(
         f"{api_base(cfg)}/audio/transcriptions",
-        headers=_auth(cfg),
+        headers=auth_headers(cfg),
         data=data,
         files={"file": ("audio.wav", wav_bytes, "audio/wav")},
         timeout=60,
     )
-    return _check(r).get("text", "").strip()
+    return check_response(r).get("text", "").strip()
 
 
 def transcribe_segments(cfg, wav_bytes, prompt=None, model=None):
@@ -300,14 +338,14 @@ def transcribe_segments(cfg, wav_bytes, prompt=None, model=None):
         data["language"] = cfg["language"]
     if prompt:
         data["prompt"] = prompt[-800:]
-    r = _post(
+    r = post_with_retry(
         f"{api_base(cfg)}/audio/transcriptions",
-        headers=_auth(cfg),
+        headers=auth_headers(cfg),
         data=data,
         files={"file": ("audio.wav", wav_bytes, "audio/wav")},
         timeout=180,
     )
-    res = _check(r)
+    res = check_response(r)
     segs = res.get("segments") or []
     if not segs and res.get("text"):
         return [{"start": 0.0, "end": 0.0, "text": res["text"].strip(), "logprob": 0.0, "no_speech": 0.0, "compression": 1.0}]
@@ -335,13 +373,13 @@ def cleanup(cfg, raw, style, app_label):
     if "gpt-oss" in model:
         body["reasoning_effort"] = "low"
         body["include_reasoning"] = False
-    r = _post(
+    r = post_with_retry(
         f"{api_base(cfg)}/chat/completions",
-        headers=_auth(cfg),
+        headers=auth_headers(cfg),
         json=body,
         timeout=60,
     )
-    return sanitize(_check(r)["choices"][0]["message"].get("content", ""))
+    return sanitize(check_response(r)["choices"][0]["message"].get("content", ""))
 
 
 def process(cfg, pcm_bytes, exe, app_label):
@@ -356,12 +394,12 @@ def process(cfg, pcm_bytes, exe, app_label):
             c = cleanup(cfg, raw, style, app_label)
             if looks_valid(raw, c):
                 out = c
-        except (GroqError, requests.RequestException):
+        except (ApiError, requests.RequestException):
             pass  # keep the raw transcript
     return raw, apply_replacements(out, replacements(cfg))
 
 
 def check_key(key, base_url=None):
     """True when the API accepts the key (Groq unless base_url is given)."""
-    r = requests.get(f"{api_base({'base_url': base_url})}/models", headers=_auth({"api_key": key}), timeout=15)
+    r = requests.get(f"{api_base({'base_url': base_url})}/models", headers=auth_headers({"api_key": key}), timeout=15)
     return r.status_code == 200

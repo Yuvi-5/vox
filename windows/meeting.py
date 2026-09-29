@@ -63,9 +63,9 @@ def _llm(cfg, system, user, max_tokens=4096, effort="medium"):
     if "gpt-oss" in model:
         body["reasoning_effort"] = effort
         body["include_reasoning"] = False
-    r = core._post(f"{core.api_base(cfg)}/chat/completions", headers=core._auth(cfg),
+    r = core.post_with_retry(f"{core.api_base(cfg)}/chat/completions", headers=core.auth_headers(cfg),
                    json=body, timeout=240)
-    return core.sanitize(core._check(r)["choices"][0]["message"].get("content", ""))
+    return core.sanitize(core.check_response(r)["choices"][0]["message"].get("content", ""))
 
 
 # --------------------------------------------------------------------- prompts
@@ -272,8 +272,9 @@ class Meeting:
             return False
         import soundcard as sc
         cfg = self.get_cfg()
-        if not cfg.get("api_key"):
-            self.last_error = "Add your Groq API key first"
+        problem = core.endpoint_error(cfg) or ("Add your API key first" if core.key_missing(cfg) else "")
+        if problem:
+            self.last_error = problem
             return False
         self.id = datetime.now().strftime("%Y%m%d-%H%M%S")
         self.started = time.time()
@@ -334,8 +335,8 @@ class Meeting:
             try:
                 self._pace()
                 return core.transcribe_segments(self.get_cfg(), core.pcm_to_wav(pcm), prompt=prompt, model=model)
-            except core.GroqError as e:
-                self.last_error = "Groq rate limit, catching up..." if e.code == 429 else str(e)
+            except core.ApiError as e:
+                self.last_error = "Rate limit, catching up..." if e.code == 429 else str(e)
                 log.warning("stt failed (%s), retry %s", e, attempt)
                 time.sleep(6 * (attempt + 1) if e.code == 429 else 3)
             except requests.RequestException as e:

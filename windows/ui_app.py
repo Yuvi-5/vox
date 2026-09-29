@@ -75,6 +75,10 @@ class Api:
         core.save_config(merged)
         return True
 
+    def endpoint_problem(self, base_url):
+        """Text to show under the server address field, or '' when the address is acceptable."""
+        return core.endpoint_error({"base_url": base_url})
+
     def set_hotkey(self, hid):
         for h in HOTKEYS:
             if h["id"] == hid:
@@ -82,9 +86,14 @@ class Api:
                 return h["label"]
         return None
 
-    def check_key(self, key):
+    def check_key(self, key, base_url=None):
+        """True/False when the server answers; None when it cannot be reached or the address is refused."""
         try:
-            return core.check_key(key.strip())
+            if base_url is None:
+                base_url = core.load_config().get("base_url")
+            if core.endpoint_error({"base_url": base_url}):
+                return None
+            return core.check_key(key.strip(), base_url)
         except Exception as e:
             log.warning("key check failed: %s", e)
             return None
