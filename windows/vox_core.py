@@ -16,6 +16,7 @@ SAMPLE_RATE = 16000
 
 DEFAULT_CONFIG = {
     "api_key": "",
+    "base_url": BASE,
     "hotkey": ["ctrl_l", "cmd"],
     "stt_model": DEFAULT_STT,
     "llm_model": DEFAULT_LLM,
@@ -250,6 +251,17 @@ def _post(url, retries=2, **kw):
             time.sleep(0.7 * (attempt + 1))
 
 
+def api_base(cfg):
+    """Base URL of the OpenAI-compatible API. Blank falls back to Groq."""
+    return (cfg.get("base_url") or "").strip().rstrip("/") or BASE
+
+
+def _auth(cfg):
+    """Authorization header, or none when no key is set (some self-hosted servers need no key)."""
+    key = (cfg.get("api_key") or "").strip()
+    return {"Authorization": f"Bearer {key}"} if key else {}
+
+
 def _check(r):
     if r.status_code >= 400:
         try:
@@ -268,8 +280,8 @@ def transcribe(cfg, wav_bytes):
     if prompt:
         data["prompt"] = prompt
     r = _post(
-        f"{BASE}/audio/transcriptions",
-        headers={"Authorization": f"Bearer {cfg['api_key']}"},
+        f"{api_base(cfg)}/audio/transcriptions",
+        headers=_auth(cfg),
         data=data,
         files={"file": ("audio.wav", wav_bytes, "audio/wav")},
         timeout=60,
@@ -289,8 +301,8 @@ def transcribe_segments(cfg, wav_bytes, prompt=None, model=None):
     if prompt:
         data["prompt"] = prompt[-800:]
     r = _post(
-        f"{BASE}/audio/transcriptions",
-        headers={"Authorization": f"Bearer {cfg['api_key']}"},
+        f"{api_base(cfg)}/audio/transcriptions",
+        headers=_auth(cfg),
         data=data,
         files={"file": ("audio.wav", wav_bytes, "audio/wav")},
         timeout=180,
@@ -324,8 +336,8 @@ def cleanup(cfg, raw, style, app_label):
         body["reasoning_effort"] = "low"
         body["include_reasoning"] = False
     r = _post(
-        f"{BASE}/chat/completions",
-        headers={"Authorization": f"Bearer {cfg['api_key']}"},
+        f"{api_base(cfg)}/chat/completions",
+        headers=_auth(cfg),
         json=body,
         timeout=60,
     )
@@ -349,7 +361,7 @@ def process(cfg, pcm_bytes, exe, app_label):
     return raw, apply_replacements(out, replacements(cfg))
 
 
-def check_key(key):
-    """True when Groq accepts the key."""
-    r = requests.get(f"{BASE}/models", headers={"Authorization": f"Bearer {key}"}, timeout=15)
+def check_key(key, base_url=None):
+    """True when the API accepts the key (Groq unless base_url is given)."""
+    r = requests.get(f"{api_base({'base_url': base_url})}/models", headers=_auth({"api_key": key}), timeout=15)
     return r.status_code == 200

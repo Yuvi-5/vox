@@ -63,7 +63,7 @@ def _llm(cfg, system, user, max_tokens=4096, effort="medium"):
     if "gpt-oss" in model:
         body["reasoning_effort"] = effort
         body["include_reasoning"] = False
-    r = core._post(f"{core.BASE}/chat/completions", headers={"Authorization": f"Bearer {cfg['api_key']}"},
+    r = core._post(f"{core.api_base(cfg)}/chat/completions", headers=core._auth(cfg),
                    json=body, timeout=240)
     return core.sanitize(core._check(r)["choices"][0]["message"].get("content", ""))
 
