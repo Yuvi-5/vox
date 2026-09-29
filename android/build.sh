@@ -35,11 +35,13 @@ cp build/base.apk build/unsigned.apk
 "$BT/zipalign" -f 4 build/unsigned.apk build/aligned.apk
 
 KS="vox.keystore"
+# Keystore password: the ANDROID_KEYSTORE_PASS secret in CI (KS_PASS). The old default keeps existing keys working.
+PASS="${KS_PASS:-voxvox}"
 if [ ! -f "$KS" ]; then
-  keytool -genkeypair -keystore "$KS" -storepass voxvox -keypass voxvox -alias vox \
+  keytool -genkeypair -keystore "$KS" -storepass "$PASS" -keypass "$PASS" -alias vox \
     -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Vox" >/dev/null 2>&1
 fi
-"$BT/apksigner" sign --ks "$KS" --ks-pass pass:voxvox --key-pass pass:voxvox \
+"$BT/apksigner" sign --ks "$KS" --ks-pass "pass:$PASS" --key-pass "pass:$PASS" \
   --out build/Vox.apk build/aligned.apk
 "$BT/apksigner" verify build/Vox.apk
 echo "Built android/build/Vox.apk"

@@ -15,9 +15,9 @@ import pyperclip
 import pystray
 import requests
 import sounddevice as sd
-from PIL import Image, ImageDraw
 from pynput import keyboard
 
+import logo
 import vox_core as core
 import vcalendar
 from meeting import Meeting
@@ -55,13 +55,6 @@ def foreground_app():
         return ""
 
 
-def dot(color):
-    img = Image.new("RGBA", (64, 64), (0, 0, 0, 0))
-    ImageDraw.Draw(img).ellipse((6, 6, 58, 58), fill=color)
-    return img
-
-
-import logo
 ICONS = {k: logo.draw(64, k) for k in ("idle", "rec", "busy")}
 
 
