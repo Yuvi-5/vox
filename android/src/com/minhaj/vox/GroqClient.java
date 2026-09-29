@@ -19,9 +19,9 @@ import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-/** Groq (OpenAI-compatible) speech-to-text and text cleanup. */
+/** Speech-to-text and text cleanup over an OpenAI-compatible API (Groq by default, or a server of your own). */
 public final class GroqClient {
-    private static final String BASE = "https://api.groq.com/openai/v1";
+    public static final String DEFAULT_BASE = "https://api.groq.com/openai/v1";
 
     public static class ApiException extends IOException {
         public final int code;
@@ -29,15 +29,20 @@ public final class GroqClient {
     }
 
     private final String apiKey;
+    private final String base;
 
-    public GroqClient(String apiKey) { this.apiKey = apiKey; }
+    public GroqClient(String apiKey, String baseUrl) {
+        this.apiKey = apiKey == null ? "" : apiKey.trim();
+        String b = Endpoint.normalize(baseUrl);
+        this.base = b.isEmpty() ? DEFAULT_BASE : b;
+    }
 
     /** True when Groq accepts the key, false when it rejects it. Throws on network errors. */
     public boolean checkKey() throws IOException {
-        HttpURLConnection c = (HttpURLConnection) new URL(BASE + "/models").openConnection();
+        HttpURLConnection c = (HttpURLConnection) new URL(base + "/models").openConnection();
         c.setConnectTimeout(15000);
         c.setReadTimeout(15000);
-        c.setRequestProperty("Authorization", "Bearer " + apiKey);
+        if (!apiKey.isEmpty()) c.setRequestProperty("Authorization", "Bearer " + apiKey);
         int code = c.getResponseCode();
         c.disconnect();
         return code == 200;
@@ -47,7 +52,7 @@ public final class GroqClient {
 
     public String transcribe(File wav, String model, String language, List<String> terms) throws IOException {
         String boundary = "----vox" + System.nanoTime();
-        HttpURLConnection c = open(BASE + "/audio/transcriptions");
+        HttpURLConnection c = open(base + "/audio/transcriptions");
         c.setRequestProperty("Content-Type", "multipart/form-data; boundary=" + boundary);
         c.setDoOutput(true);
         c.setChunkedStreamingMode(0);
@@ -111,7 +116,7 @@ public final class GroqClient {
         } catch (Exception e) {
             throw new IOException(e);
         }
-        HttpURLConnection c = open(BASE + "/chat/completions");
+        HttpURLConnection c = open(base + "/chat/completions");
         c.setRequestProperty("Content-Type", "application/json");
         c.setDoOutput(true);
         try (OutputStream out = c.getOutputStream()) {
@@ -215,11 +220,13 @@ public final class GroqClient {
     // ---------------------------------------------------------------- http
 
     private HttpURLConnection open(String url) throws IOException {
+        String problem = Endpoint.error(base);
+        if (problem != null) throw new IOException(problem);
         HttpURLConnection c = (HttpURLConnection) new URL(url).openConnection();
         c.setRequestMethod("POST");
         c.setConnectTimeout(15000);
         c.setReadTimeout(60000);
-        c.setRequestProperty("Authorization", "Bearer " + apiKey);
+        if (!apiKey.isEmpty()) c.setRequestProperty("Authorization", "Bearer " + apiKey);
         return c;
     }
 
@@ -232,10 +239,10 @@ public final class GroqClient {
             String msg = body;
             try { msg = new JSONObject(body).getJSONObject("error").optString("message", body); }
             catch (Exception ignored) { }
-            throw new ApiException(code, "Groq " + code + ": " + msg);
+            throw new ApiException(code, "API " + code + ": " + msg);
         }
         try { return new JSONObject(body); }
-        catch (Exception e) { throw new IOException("Bad JSON from Groq"); }
+        catch (Exception e) { throw new IOException("Bad JSON from the server"); }
     }
 
     private static String readAll(InputStream in) throws IOException {

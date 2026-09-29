@@ -125,12 +125,16 @@ nav button.on .pill { background:var(--accent-soft); }
 
 <!-- SETTINGS -->
 <section class="page" id="settings">
-  <h2>Groq key</h2>
+  <h2>API key</h2>
   <div class="card">
     <input type="password" id="key" placeholder="gsk_..." autocomplete="off">
     <div class="row" style="margin-top:10px;gap:8px"><button class="btn" id="key-save" style="flex:1">Save and test</button><button class="btn ghost" id="key-get">Get a free key</button></div>
     <div class="status" id="key-status"></div>
-    <div class="note">Free, no card. Your own key means your own limits. Stored only on this phone.</div>
+    <div class="note">Free Groq key, no card. Your own key means your own limits. Stored only on this phone.</div>
+    <label class="note" style="margin:14px 0 0">Server address (optional)</label>
+    <input type="text" id="base-url" placeholder="https://api.groq.com/openai/v1" autocomplete="off" autocapitalize="off" spellcheck="false" style="margin-top:4px">
+    <div class="status" id="url-status"></div>
+    <div class="note">Leave empty for Groq. Or point Vox at your own Whisper server, for example over Tailscale. Plain http works only for this phone, your local network and Tailscale.</div>
   </div>
   <h2>Dictation</h2>
   <div class="card list">
@@ -168,11 +172,13 @@ nav button.on .pill { background:var(--accent-soft); }
 <script>
 const V = window.Vox || {   // browser preview fallback
   state: () => JSON.stringify({ config: { api_key: "", dictionary: [], people: [], app_styles: {}, cleanup: true, only_typing: true, default_style: "neutral", stt_model: "whisper-large-v3-turbo", llm_model: "openai/gpt-oss-20b", language: "" }, mic: false, a11y: false, service: false, history: [], dark: false, version: "dev" }),
-  save(){}, requestMic(){}, openAccessibility(){}, openAppInfo(){}, openBattery(){}, setService(){}, testKey(k, cb){ setTimeout(() => window[cb]("ok"), 300); }, copy(){}, deleteHistory(){}, clearHistory(){}, openUrl(){}, toast(){}, apps: () => "[]", appLabel: (p) => p
+  save(){}, requestMic(){}, openAccessibility(){}, openAppInfo(){}, openBattery(){}, setService(){}, testKey(k, u, cb){ setTimeout(() => window[cb]("ok"), 300); }, endpointProblem: () => "", copy(){}, deleteHistory(){}, clearHistory(){}, openUrl(){}, toast(){}, apps: () => "[]", appLabel: (p) => p
 };
 const STYLES = [["neutral","Neutral"],["formal","Formal"],["casual","Casual"],["very_casual","Very casual"],["raw","Raw (no cleanup)"]];
 const TITLES = { home: ["Vox", ""], dict: ["Dictionary", ""], styles: ["Styles", ""], settings: ["Settings", ""] };
+const GROQ_URL = "https://api.groq.com/openai/v1";
 let S = null, PAGE = "home";
+const isGroq = () => !S.config.base_url || S.config.base_url.indexOf("api.groq.com") >= 0;
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, c => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;" }[c]));
 function toast(m) { const t = $("toast"); t.textContent = m; t.classList.add("on"); clearTimeout(t._h); t._h = setTimeout(() => t.classList.remove("on"), 1600); }
@@ -195,7 +201,7 @@ window.voxBack = () => { if ($("sheet").classList.contains("on")) { closeSheet()
 // ---------------- home
 function setupSteps() {
   return [
-    { done: !!S.config.api_key, t: "Add your free Groq key", d: "Powers speech-to-text and cleanup. Takes 2 minutes.", btn: "Add key", act: () => { go("settings"); setTimeout(() => $("key").focus(), 200); } },
+    { done: !!S.config.api_key || !isGroq(), t: "Add your free Groq key", d: "Powers speech-to-text and cleanup. Takes 2 minutes.", btn: "Add key", act: () => { go("settings"); setTimeout(() => $("key").focus(), 200); } },
     { done: S.mic, t: "Allow the microphone", d: "So Vox can hear you.", btn: "Allow", act: () => V.requestMic() },
     { done: S.a11y, t: "Turn on the Vox bubble", d: "Settings → Accessibility → Downloaded apps → Vox dictation bubble → On.", btn: "Open", act: () => V.openAccessibility(),
       extra: '<div class="note">Greyed out or "Restricted setting"? Open <a href="#" id="appinfo">App info</a>, tap ⋮ (top right) → <b>Allow restricted settings</b>, then try again.</div>' },
@@ -292,18 +298,33 @@ $("sheet-bg").onclick = closeSheet;
 function renderSettings() {
   const c = S.config;
   if (document.activeElement !== $("key")) $("key").value = c.api_key || "";
+  if (document.activeElement !== $("base-url")) $("base-url").value = isGroq() ? "" : c.base_url;
   $("cleanup").checked = c.cleanup !== false; $("only-typing").checked = c.only_typing !== false;
   $("language").value = c.language || ""; $("service").checked = S.service;
   $("stt").value = c.stt_model || ""; $("llm").value = c.llm_model || "";
-  $("about").textContent = `Vox ${S.version} · audio goes to Groq with your key · everything else stays on this phone`;
+  $("about").textContent = `Vox ${S.version} · audio goes to ${isGroq() ? "Groq with your key" : "your own server"} · everything else stays on this phone`;
 }
 window.keyResult = (r) => {
   const s = $("key-status");
   if (r === "ok") { s.className = "status ok"; s.textContent = "Key works. You're set."; }
-  else if (r === "bad") { s.className = "status bad"; s.textContent = "Groq rejected this key. Copy it again."; }
+  else if (r === "bad") { s.className = "status bad"; s.textContent = "The server rejected this key. Copy it again."; }
   else { s.className = "status bad"; s.textContent = "No internet. Key saved, test again later."; }
 };
-$("key-save").onclick = () => { const k = $("key").value.trim(); if (!k) return; save({ api_key: k }); $("key-status").className = "status"; $("key-status").textContent = "Checking…"; V.testKey(k, "keyResult"); };
+$("key-save").onclick = () => {
+  const k = $("key").value.trim();
+  if (!k && isGroq()) return;
+  save({ api_key: k });
+  $("key-status").className = "status"; $("key-status").textContent = "Checking…";
+  V.testKey(k, $("base-url").value.trim(), "keyResult");
+};
+$("base-url").onchange = () => {
+  const v = $("base-url").value.trim(), s = $("url-status");
+  const problem = v ? V.endpointProblem(v) : "";
+  if (problem) { s.className = "status bad"; s.textContent = problem; return; }
+  s.className = "status ok"; s.textContent = v ? "Saved" : "Using Groq";
+  save({ base_url: v || GROQ_URL });
+  render();
+};
 $("key-get").onclick = () => V.openUrl("https://console.groq.com/keys");
 $("cleanup").onchange = (e) => save({ cleanup: e.target.checked }, "Saved");
 $("only-typing").onchange = (e) => save({ only_typing: e.target.checked }, "Saved");

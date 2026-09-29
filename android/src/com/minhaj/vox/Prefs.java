@@ -38,6 +38,10 @@ public final class Prefs {
     }
 
     public String apiKey() { return sp.getString("api_key", "").trim(); }
+    /** Server address; Groq unless the user set their own. */
+    public String baseUrl() { return nonEmpty(Endpoint.normalize(sp.getString("base_url", "")), GroqClient.DEFAULT_BASE); }
+    /** True when Groq is the server and no key is set. A server of your own may need no key. */
+    public boolean keyMissing() { return apiKey().isEmpty() && baseUrl().equals(GroqClient.DEFAULT_BASE); }
     public String sttModel() { return nonEmpty(sp.getString("stt_model", ""), DEFAULT_STT_MODEL); }
     public String llmModel() { return nonEmpty(sp.getString("llm_model", ""), DEFAULT_LLM_MODEL); }
     public String language() { return sp.getString("language", "").trim(); }

@@ -115,6 +115,7 @@ public class MainActivity extends Activity {
                 JSONObject o = new JSONObject();
                 JSONObject cfg = new JSONObject();
                 cfg.put("api_key", prefs.apiKey());
+                cfg.put("base_url", prefs.baseUrl());
                 cfg.put("language", prefs.language());
                 cfg.put("cleanup", prefs.cleanupEnabled());
                 cfg.put("only_typing", prefs.onlyWhenTyping());
@@ -143,6 +144,9 @@ public class MainActivity extends Activity {
                 JSONObject c = new JSONObject(json);
                 android.content.SharedPreferences.Editor e = prefs.edit();
                 if (c.has("api_key")) e.putString("api_key", c.getString("api_key").trim());
+                if (c.has("base_url") && Endpoint.error(c.getString("base_url")) == null) {
+                    e.putString("base_url", Endpoint.normalize(c.getString("base_url")));
+                }
                 if (c.has("language")) e.putString("language", c.getString("language"));
                 if (c.has("cleanup")) e.putBoolean("cleanup", c.getBoolean("cleanup"));
                 if (c.has("only_typing")) e.putBoolean("only_typing", c.getBoolean("only_typing"));
@@ -204,13 +208,20 @@ public class MainActivity extends Activity {
         }
 
         @JavascriptInterface
-        public void testKey(String key, String callback) {
+        public void testKey(String key, String baseUrl, String callback) {
             new Thread(() -> {
                 String res;
-                try { res = new GroqClient(key.trim()).checkKey() ? "ok" : "bad"; }
+                try { res = new GroqClient(key.trim(), baseUrl).checkKey() ? "ok" : "bad"; }
                 catch (Exception e) { res = "offline"; }
                 js(callback + "('" + res + "')");
             }).start();
+        }
+
+        /** Empty when the server address is acceptable, otherwise the reason it is not. */
+        @JavascriptInterface
+        public String endpointProblem(String baseUrl) {
+            String p = Endpoint.error(baseUrl);
+            return p == null ? "" : p;
         }
 
         @JavascriptInterface

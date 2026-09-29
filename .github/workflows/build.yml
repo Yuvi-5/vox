@@ -73,8 +73,10 @@ jobs:
           JAR="$ANDROID_HOME/platforms/android-34/android.jar"
           mkdir -p android/build/test
           javac -nowarn -encoding UTF-8 -cp "$JAR" -d android/build/test \
-            android/src/com/minhaj/vox/GroqClient.java android/test/com/minhaj/vox/GroqClientTest.java
+            android/src/com/minhaj/vox/GroqClient.java android/src/com/minhaj/vox/Endpoint.java \
+            android/test/com/minhaj/vox/GroqClientTest.java android/test/com/minhaj/vox/EndpointTest.java
           java -cp "android/build/test:$JAR" com.minhaj.vox.GroqClientTest
+          java -cp "android/build/test:$JAR" com.minhaj.vox.EndpointTest
       - name: Build APK
         run: BUILD_TOOLS="$ANDROID_HOME/build-tools/36.0.0" bash ./android/build.sh
       - uses: actions/upload-artifact@v4

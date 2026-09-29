@@ -138,8 +138,13 @@ public class DictationService extends Service {
     public synchronized void startRecording(String pkg, String label) {
         if (state != IDLE) return;
         Prefs p = new Prefs(this);
-        if (p.apiKey().isEmpty()) {
-            postError("Add your Groq API key in the Vox app first");
+        String problem = Endpoint.error(p.baseUrl());
+        if (problem != null) {
+            postError(problem);
+            return;
+        }
+        if (p.keyMissing()) {
+            postError("Add your API key in the Vox app first");
             return;
         }
         targetPkg = pkg;
@@ -269,7 +274,7 @@ public class DictationService extends Service {
         Prefs p = new Prefs(this);
         File wav = pendingFile();
         try {
-            GroqClient g = new GroqClient(p.apiKey());
+            GroqClient g = new GroqClient(p.apiKey(), p.baseUrl());
             String raw = null;
             for (int attempt = 1; attempt <= SEND_ATTEMPTS && raw == null; attempt++) {
                 if (!isCurrent(job)) return;
@@ -307,8 +312,8 @@ public class DictationService extends Service {
             main.post(() -> { if (isCurrent(job) && listener != null) listener.onResult(result, pkg); });
         } catch (GroqClient.ApiException e) {
             if (!isCurrent(job)) return;
-            if (e.code == 401) postError("Groq rejected the API key. Fix it, then tap Retry in the notification.");
-            else if (e.code == 429) postError("Groq free limit reached. Tap Retry in the notification.");
+            if (e.code == 401) postError("The server rejected the API key. Fix it, then tap Retry in the notification.");
+            else if (e.code == 429) postError("Rate limit reached. Tap Retry in the notification.");
             else postError(e.getMessage() + ". Your recording is saved: tap Retry in the notification.");
         } catch (IOException e) {
             if (!isCurrent(job)) return;
