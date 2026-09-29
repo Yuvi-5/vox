@@ -242,6 +242,7 @@ class Meeting:
         self.event = None          # calendar event dict or None
         self.qa = []               # live questions and answers
         self.lock = threading.Lock()
+        self.ctl = threading.Lock()      # start and stop can come from the tray, the window and the calendar at once
         self._last_call = 0.0
 
     # ------------------------------------------------------------ status
@@ -268,6 +269,10 @@ class Meeting:
 
     # ------------------------------------------------------------- control
     def start(self, event=None):
+        with self.ctl:
+            return self._start(event)
+
+    def _start(self, event=None):
         if self.active or self.processing:
             return False
         import soundcard as sc
@@ -307,6 +312,10 @@ class Meeting:
 
     def stop(self):
         """Stops recording; the slow final pass and notes run in a thread."""
+        with self.ctl:
+            return self._stop()
+
+    def _stop(self):
         if not self.active:
             return False
         self.active = False
@@ -421,8 +430,9 @@ class Meeting:
                         span = next((sp for sp in spans if sp[0] <= t < sp[1] + 0.4), spans[-1])
                         got.append({"t": round(span[2] + max(0.0, t - span[0])), "who": s.who, "text": sg["text"]})
             final.extend(got if ok and got else live)
-        self.entries = []
-        self._add(sorted(final, key=lambda e: e["t"]))
+        with self.lock:   # status() reads the entries from other threads
+            self.entries = []
+            self._add(sorted(final, key=lambda e: e["t"]))
 
     # -------------------------------------------------------------- labels
     def _me(self):

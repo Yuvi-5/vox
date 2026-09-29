@@ -1,4 +1,5 @@
 """Platform-independent parts of Vox: config, Groq calls, prompt, text post-processing."""
+import array
 import io
 import ipaddress
 import json
@@ -17,6 +18,8 @@ BASE = "https://api.groq.com/openai/v1"
 DEFAULT_STT = "whisper-large-v3-turbo"
 DEFAULT_LLM = "openai/gpt-oss-20b"
 SAMPLE_RATE = 16000
+SILENCE_PEAK = 655          # 16-bit peak (about -34 dBFS) below which a recording is treated as silence
+RETRY_STATUS = (500, 502, 503, 504)   # server trouble worth retrying; 429 is left to the callers
 
 DEFAULT_CONFIG = {
     "api_key": "",
@@ -229,6 +232,18 @@ def is_silence_hallucination(t):
 
 # --------------------------------------------------------------------- audio
 
+def is_silent(pcm_bytes, threshold=SILENCE_PEAK):
+    """True when a 16-bit mono recording never gets louder than the threshold (nothing was said)."""
+    n = len(pcm_bytes) // 2
+    if n == 0:
+        return True
+    samples = array.array("h")
+    samples.frombytes(pcm_bytes[: n * 2])
+    if sys.byteorder == "big":
+        samples.byteswap()
+    return max(max(samples), -min(samples)) < threshold
+
+
 def pcm_to_wav(pcm_bytes):
     buf = io.BytesIO()
     with wave.open(buf, "wb") as w:
@@ -250,18 +265,22 @@ class ApiError(Exception):
 
 
 def post_with_retry(url, retries=2, **kw):
-    """POST with a quick retry on dropped connections (flaky Wi-Fi, VPNs, antivirus TLS inspection)."""
+    """POST with a quick retry on dropped connections (flaky Wi-Fi, VPNs, antivirus TLS inspection)
+    and on temporary server errors (500, 502, 503, 504). The last response is returned as it is."""
     for attempt in range(retries + 1):
         try:
             if "files" in kw:   # file objects must be re-sent from the start
                 for name, spec in kw["files"].items():
                     if hasattr(spec[1], "seek"):
                         spec[1].seek(0)
-            return requests.post(url, **kw)
+            r = requests.post(url, **kw)
         except (requests.ConnectionError, requests.Timeout):
             if attempt == retries:
                 raise
-            time.sleep(0.7 * (attempt + 1))
+        else:
+            if r.status_code not in RETRY_STATUS or attempt == retries:
+                return r
+        time.sleep(0.7 * (attempt + 1))
 
 
 def api_base(cfg):

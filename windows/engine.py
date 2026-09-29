@@ -86,6 +86,8 @@ class Engine:
         self.pressed = set()
         self.recording = False
         self.busy = False
+        self.pending = None           # (pcm, exe) of a dictation that could not be sent; kept for Retry
+        self._rec_lock = threading.Lock()
         self.chunks = []
         self.stream = None
         self.target = ""
@@ -103,6 +105,7 @@ class Engine:
             "Vox", ICONS["idle"], "Vox",
             menu=pystray.Menu(
                 pystray.MenuItem("Open Vox", lambda *_: open_window(), default=True),
+                pystray.MenuItem("Retry last dictation", self.retry_last, visible=lambda _: self.pending is not None),
                 pystray.MenuItem(lambda _: "Stop meeting notes" if self.meeting.active else "Start meeting notes",
                                  self.toggle_meeting),
                 pystray.MenuItem("Quit Vox", self.quit),
@@ -140,6 +143,14 @@ class Engine:
     # ------------------------------------------------------------------ misc
     def quit(self, *_):
         log.info("quit")
+        m = self.meeting
+        if m.active:
+            m.stop()
+        if m.processing:   # let the meeting notes finish saving instead of losing them
+            self.notify("Saving your meeting notes before quitting...")
+            deadline = time.time() + 180
+            while m.processing and time.time() < deadline:
+                time.sleep(0.5)
         self.icon.stop()
         if self.overlay:
             self.overlay.stop()
@@ -249,34 +260,52 @@ class Engine:
         except Exception:
             pass
 
+    def _end_recording(self):
+        """Atomically leaves the recording state; False when it had already ended (the audio callback and
+        the hotkey can both ask to stop)."""
+        with self._rec_lock:
+            if not self.recording:
+                return False
+            self.recording = False
+            self.hands_free = False
+        self._close_stream()
+        return True
+
     def cancel(self):
         """Discard the current recording."""
-        if not self.recording:
-            return
-        self.recording = False
-        self.hands_free = False
-        self._close_stream()
-        self.set_state("idle")
+        if self._end_recording():
+            self.set_state("idle")
 
     def stop(self):
-        if not self.recording:
+        if not self._end_recording():
             return
-        self.recording = False
-        self.hands_free = False
-        self._close_stream()
         pcm = b"".join(self.chunks)
         if len(pcm) < core.SAMPLE_RATE * 2 * MIN_SECONDS:
             self.set_state("idle")
             return
+        if core.is_silent(pcm):
+            self.notify("Vox did not hear anything")
+            self.set_state("idle")
+            return
         self.busy = True
         self.set_state("busy")
-        threading.Thread(target=self._process, args=(pcm,), daemon=True).start()
+        threading.Thread(target=self._process, args=(pcm, self.target), daemon=True).start()
 
-    def _process(self, pcm):
-        exe = self.target
+    def retry_last(self, *_):
+        """Sends again the last recording that could not be sent."""
+        if self.busy or self.recording or self.pending is None:
+            return
+        pcm, exe = self.pending
+        self.busy = True
+        self.set_state("busy")
+        threading.Thread(target=self._process, args=(pcm, exe), daemon=True).start()
+
+    def _process(self, pcm, exe):
         secs = len(pcm) / (core.SAMPLE_RATE * 2)
+        keep = " Your recording is kept: tray icon > Retry last dictation."
         try:
             raw, text = core.process(self.cfg, pcm, exe, exe)
+            self.pending = None
             if text:
                 self.paste(text)
                 if self.cfg.get("keep_history", True):
@@ -286,14 +315,16 @@ class Engine:
                     })
         except core.ApiError as e:
             log.error("api error: %s", e)
+            self.pending = (pcm, exe)
             if e.code == 401:
-                self.notify("The server rejected the API key. Check Vox > Settings.")
+                self.notify("The server rejected the API key. Check Vox > Settings." + keep)
             elif e.code == 429:
-                self.notify("Rate limit reached. Try again shortly.")
+                self.notify("Rate limit reached. Try again shortly." + keep)
             else:
-                self.notify(str(e))
+                self.notify(str(e) + keep)
         except requests.RequestException as e:
-            self.notify(f"Network error: {e}")
+            self.pending = (pcm, exe)
+            self.notify(f"Network error: {e}." + keep)
         except Exception:
             log.exception("processing failed")
         finally:
@@ -416,7 +447,7 @@ class Engine:
                     return self._send(500, {"error": str(e)})
 
         srv = ThreadingHTTPServer(("127.0.0.1", 0), H)
-        with open(os.path.join(core.data_dir(), "engine.json"), "w") as f:
+        with open(os.path.join(core.data_dir(), "engine.json"), "w", encoding="utf-8") as f:
             json.dump({"port": srv.server_address[1], "token": token, "pid": os.getpid()}, f)
         srv.serve_forever()
 

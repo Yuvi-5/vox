@@ -121,7 +121,7 @@ class Api:
     # ------------------------------------------------------------ meetings
     def _engine(self, path, body=None):
         try:
-            with open(os.path.join(core.data_dir(), "engine.json")) as f:
+            with open(os.path.join(core.data_dir(), "engine.json"), encoding="utf-8") as f:
                 info = json.load(f)
             req = urllib.request.Request(f"http://127.0.0.1:{info['port']}{path}", method="POST",
                                          data=json.dumps(body or {}).encode(),

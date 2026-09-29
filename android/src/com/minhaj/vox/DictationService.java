@@ -223,6 +223,11 @@ public class DictationService extends Service {
                 finish(job);
                 return;
             }
+            if (Pcm.isSilent(audio)) {
+                postError("Vox did not hear anything");
+                finish(job);
+                return;
+            }
             try {
                 writeWav(pendingFile(), audio);
             } catch (IOException e) {
