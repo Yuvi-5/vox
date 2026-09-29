@@ -219,6 +219,16 @@ public class MainActivity extends Activity {
             }).start();
         }
 
+        /** Word swaps found between a dictation and the user's fixed version, as JSON [[wrong, right], ...]. */
+        @JavascriptInterface
+        public String suggestCorrections(String original, String edited) {
+            JSONArray arr = new JSONArray();
+            for (String[] p : Corrections.suggest(original, edited, 3)) {
+                arr.put(new JSONArray().put(p[0]).put(p[1]));
+            }
+            return arr.toString();
+        }
+
         /** Empty when the server address is acceptable, otherwise the reason it is not. */
         @JavascriptInterface
         public String endpointProblem(String baseUrl) {

@@ -98,6 +98,11 @@ class Api:
             log.warning("key check failed: %s", e)
             return None
 
+    def suggest_corrections(self, original, edited):
+        """Replacements found by comparing a dictation with the user's fixed version, minus ones already saved."""
+        known = {w.lower() for w in core.replacements(core.load_config())}
+        return [[w, r] for w, r in core.suggest_corrections(original, edited) if w.lower() not in known]
+
     def copy(self, text):
         pyperclip.copy(text)
         return True

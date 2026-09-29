@@ -74,8 +74,9 @@ jobs:
           mkdir -p android/build/test
           javac -nowarn -encoding UTF-8 -cp "$JAR" -d android/build/test \
             android/src/com/minhaj/vox/GroqClient.java android/src/com/minhaj/vox/Endpoint.java \
-            android/src/com/minhaj/vox/Pcm.java android/test/com/minhaj/vox/*.java
-          for t in GroqClientTest EndpointTest PcmTest; do
+            android/src/com/minhaj/vox/Pcm.java android/src/com/minhaj/vox/Corrections.java \
+            android/test/com/minhaj/vox/*.java
+          for t in GroqClientTest EndpointTest PcmTest CorrectionsTest; do
             java -cp "android/build/test:$JAR" "com.minhaj.vox.$t"
           done
       - name: Build APK

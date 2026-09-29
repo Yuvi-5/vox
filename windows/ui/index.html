@@ -53,6 +53,10 @@ kbd { font: 600 12px "Segoe UI", sans-serif; background: var(--panel); border: 1
 .icon-btn { all: unset; cursor: pointer; width: 28px; height: 28px; border-radius: 7px; display: grid; place-items: center; color: var(--muted); }
 .icon-btn:hover { background: var(--bg); color: var(--text); }
 .icon-btn svg { width: 15px; height: 15px; }
+.fix { margin-top: 8px; }
+.fix-text { width: 100%; box-sizing: border-box; font: inherit; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); color: var(--text); resize: vertical; }
+.fix-row { display: flex; align-items: center; gap: 10px; margin-top: 8px; }
+.sugg { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 6px 0; border-bottom: 1px solid var(--line); }
 .empty { color: var(--muted); padding: 28px; text-align: center; }
 .row { display: flex; gap: 10px; align-items: center; }
 input[type=text], input[type=password], select {
@@ -291,6 +295,7 @@ const STYLES = [
   ["neutral", "Neutral"], ["formal", "Formal"], ["casual", "Casual"], ["very_casual", "Very casual"], ["raw", "Raw (no cleanup)"]
 ];
 const ICON_COPY = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a1 1 0 0 1 1-1h10"/></svg>';
+const ICON_EDIT = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 20h4L19 9l-4-4L4 16zM13 7l4 4"/></svg>';
 const ICON_DEL = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/></svg>';
 const ICON_X = '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>';
 let S = null;
@@ -351,13 +356,44 @@ function renderHistory() {
       html += `<div class="day">${ds === today ? "Today" : ds === yest ? "Yesterday" : d.toLocaleDateString(undefined, { weekday: "long", month: "short", day: "numeric" })}</div><div class="card list">`;
     }
     html += `<div class="entry"><div class="time">${d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}</div>
-      <div><div class="txt">${esc(e.text)}</div><div class="app">${esc((e.app || "").replace(/\.exe$/i, ""))} · ${e.words} words</div></div>
-      <div class="acts"><button class="icon-btn" title="Copy" data-copy="${e.t}">${ICON_COPY}</button><button class="icon-btn" title="Delete" data-del="${e.t}">${ICON_DEL}</button></div></div>`;
+      <div><div class="txt">${esc(e.text)}</div><div class="fix" data-fixbox="${e.t}"></div><div class="app">${esc((e.app || "").replace(/\.exe$/i, ""))} · ${e.words} words</div></div>
+      <div class="acts"><button class="icon-btn" title="Fix a word Vox got wrong" data-fix="${e.t}">${ICON_EDIT}</button><button class="icon-btn" title="Copy" data-copy="${e.t}">${ICON_COPY}</button><button class="icon-btn" title="Delete" data-del="${e.t}">${ICON_DEL}</button></div></div>`;
   }
   $("history").innerHTML = html + "</div>";
 }
 $("search").oninput = renderHistory;
+function openFix(t) {
+  const e = S.history.find(x => String(x.t) === String(t));
+  if (!e) return;
+  const box = document.querySelector(`[data-fixbox="${t}"]`);
+  if (box.innerHTML) { box.innerHTML = ""; return; }
+  box.innerHTML = `<textarea class="fix-text" rows="3">${esc(e.text)}</textarea>
+    <div class="fix-row"><button class="btn" data-learn="${t}">Learn from my fix</button><span class="status" data-fixstatus></span></div><div class="fix-sugg"></div>`;
+  box.querySelector("textarea").focus();
+}
+async function learnFix(t) {
+  const e = S.history.find(x => String(x.t) === String(t));
+  const box = document.querySelector(`[data-fixbox="${t}"]`);
+  const st = box.querySelector("[data-fixstatus]"), sg = box.querySelector(".fix-sugg");
+  const pairs = await api().suggest_corrections(e.text, box.querySelector("textarea").value);
+  if (!pairs.length) { st.textContent = "No word swaps found. Change a word, then try again."; return; }
+  st.textContent = "";
+  sg.innerHTML = pairs.map(([w, r], i) => `<div class="sugg"><span>${esc(w)} <span class="arrow">→</span> <b>${esc(r)}</b></span><button class="btn ghost" data-addsugg="${i}">Add to dictionary</button></div>`).join("");
+  sg.onclick = async (ev) => {
+    const b = ev.target.closest("[data-addsugg]");
+    if (!b) return;
+    const [w, r] = pairs[+b.dataset.addsugg];
+    const { terms, repl } = dictLists();
+    if (!repl.some(([x]) => x.toLowerCase() === w.toLowerCase())) repl.push([w, r]);
+    await setDict(terms, repl);
+    b.textContent = "Added"; b.disabled = true;
+    toast(`Vox will now write "${r}"`);
+  };
+}
 $("history").onclick = async (ev) => {
+  const f = ev.target.closest("[data-fix]"), l = ev.target.closest("[data-learn]");
+  if (f) return openFix(f.dataset.fix);
+  if (l) return learnFix(l.dataset.learn);
   const c = ev.target.closest("[data-copy]"), d = ev.target.closest("[data-del]");
   if (c) { const e = S.history.find(x => String(x.t) === c.dataset.copy); await api().copy(e.text); toast("Copied"); }
   if (d) { await api().delete_history(Number(d.dataset.del)); S.history = S.history.filter(x => String(x.t) !== d.dataset.del); renderHistory(); }

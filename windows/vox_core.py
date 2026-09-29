@@ -1,5 +1,6 @@
 """Platform-independent parts of Vox: config, Groq calls, prompt, text post-processing."""
 import array
+import difflib
 import io
 import ipaddress
 import json
@@ -140,6 +141,33 @@ def dictionary_terms(cfg):
         else:
             out.append(line)
     return list(dict.fromkeys(out))
+
+
+_EDGE_PUNCT = ".,;:!?\"'()[]{}"
+
+
+def suggest_corrections(original, edited, max_words=3):
+    """Word replacements the user made when fixing a dictation, as [(wrong, right), ...] for the dictionary.
+
+    Only swaps of up to `max_words` words are suggested (added or removed words are not replacements).
+    A change of capital letters alone is skipped at the start of a sentence, where it is just grammar.
+    """
+    a_raw, b_raw = (original or "").split(), (edited or "").split()
+    a = [t.strip(_EDGE_PUNCT) for t in a_raw]
+    b = [t.strip(_EDGE_PUNCT) for t in b_raw]
+    out = []
+    for op, i1, i2, j1, j2 in difflib.SequenceMatcher(None, a, b, autojunk=False).get_opcodes():
+        if op != "replace" or i2 - i1 > max_words or j2 - j1 > max_words:
+            continue
+        wrong, right = " ".join(a[i1:i2]).strip(), " ".join(b[j1:j2]).strip()
+        if len(wrong) < 2 or not right or wrong == right:
+            continue
+        starts_sentence = i1 == 0 or a_raw[i1 - 1][-1:] in ".?!"
+        if wrong.lower() == right.lower() and starts_sentence:
+            continue
+        if (wrong, right) not in out:
+            out.append((wrong, right))
+    return out
 
 
 def replacements(cfg):

@@ -173,7 +173,7 @@ nav button.on .pill { background:var(--accent-soft); }
 <script>
 const V = window.Vox || {   // browser preview fallback
   state: () => JSON.stringify({ config: { api_key: "", dictionary: [], people: [], app_styles: {}, cleanup: true, only_typing: true, default_style: "neutral", stt_model: "whisper-large-v3-turbo", llm_model: "openai/gpt-oss-20b", language: "" }, mic: false, a11y: false, service: false, history: [], dark: false, version: "dev" }),
-  save(){}, requestMic(){}, openAccessibility(){}, openAppInfo(){}, openBattery(){}, setService(){}, testKey(k, u, cb){ setTimeout(() => window[cb]("ok"), 300); }, endpointProblem: () => "", copy(){}, deleteHistory(){}, clearHistory(){}, openUrl(){}, toast(){}, apps: () => "[]", appLabel: (p) => p
+  save(){}, requestMic(){}, openAccessibility(){}, openAppInfo(){}, openBattery(){}, setService(){}, testKey(k, u, cb){ setTimeout(() => window[cb]("ok"), 300); }, endpointProblem: () => "", suggestCorrections: (a, b) => JSON.stringify(a !== b ? [["vox", "Vox"]] : []), copy(){}, deleteHistory(){}, clearHistory(){}, openUrl(){}, toast(){}, apps: () => "[]", appLabel: (p) => p
 };
 const STYLES = [["neutral","Neutral"],["formal","Formal"],["casual","Casual"],["very_casual","Very casual"],["raw","Raw (no cleanup)"]];
 const TITLES = { home: ["Vox", ""], dict: ["Dictionary", ""], styles: ["Styles", ""], settings: ["Settings", ""] };
@@ -184,6 +184,7 @@ const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, c => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;" }[c]));
 function toast(m) { const t = $("toast"); t.textContent = m; t.classList.add("on"); clearTimeout(t._h); t._h = setTimeout(() => t.classList.remove("on"), 1600); }
 function save(part, msg) { Object.assign(S.config, part); V.save(JSON.stringify(part)); if (msg) toast(msg); }
+const ICON_EDIT = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 20h4L19 9l-4-4L4 16zM13 7l4 4"/></svg>';
 const ICON_COPY = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a1 1 0 0 1 1-1h10"/></svg>';
 const ICON_DEL = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/></svg>';
 
@@ -242,13 +243,45 @@ function renderHistory() {
   items.slice(0, 200).forEach(e => {
     const d = new Date(e.t * 1000), ds = d.toDateString();
     if (ds !== day) { if (day) html += "</div>"; day = ds; html += `<div class="day">${ds === today ? "Today" : ds === yest ? "Yesterday" : d.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" })}</div><div class="card list">`; }
-    html += `<div class="entry"><div class="txt">${esc(e.text || e.clean)}</div><div class="meta"><span class="grow">${d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}${e.app ? " · " + esc(e.app) : ""}</span>
-      <button class="ib" data-copy="${e.t}">${ICON_COPY}</button><button class="ib" data-del="${e.t}">${ICON_DEL}</button></div></div>`;
+    html += `<div class="entry"><div class="txt">${esc(e.text || e.clean)}</div><div data-fixbox="${e.t}"></div><div class="meta"><span class="grow">${d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}${e.app ? " · " + esc(e.app) : ""}</span>
+      <button class="ib" data-fix="${e.t}" title="Fix a word Vox got wrong">${ICON_EDIT}</button><button class="ib" data-copy="${e.t}">${ICON_COPY}</button><button class="ib" data-del="${e.t}">${ICON_DEL}</button></div></div>`;
   });
   $("history").innerHTML = html + "</div>";
 }
 $("search").oninput = renderHistory;
+function openFix(t) {
+  const e = S.history.find(x => String(x.t) === String(t));
+  if (!e) return;
+  const box = document.querySelector(`[data-fixbox="${t}"]`);
+  if (box.innerHTML) { box.innerHTML = ""; return; }
+  box.innerHTML = `<textarea class="fix-text" rows="3" style="margin-top:8px">${esc(e.text || e.clean)}</textarea>
+    <div class="row" style="margin-top:8px;gap:10px;align-items:center"><button class="btn" data-learn="${t}">Learn from my fix</button><span class="status" data-fixstatus></span></div><div class="fix-sugg"></div>`;
+  box.querySelector("textarea").focus();
+}
+function learnFix(t) {
+  const e = S.history.find(x => String(x.t) === String(t));
+  const box = document.querySelector(`[data-fixbox="${t}"]`);
+  const st = box.querySelector("[data-fixstatus]"), sg = box.querySelector(".fix-sugg");
+  const known = repls().map(([w]) => w.toLowerCase());
+  const pairs = JSON.parse(V.suggestCorrections(e.text || e.clean, box.querySelector("textarea").value)).filter(([w]) => !known.includes(w.toLowerCase()));
+  if (!pairs.length) { st.textContent = "No new word swaps found"; return; }
+  st.textContent = "";
+  sg.innerHTML = pairs.map(([w, r], i) => `<div class="item" style="padding:8px 0"><div class="grow">${esc(w)} <span style="color:var(--muted)">→</span> <b>${esc(r)}</b></div><button class="btn ghost" data-addsugg="${i}">Add</button></div>`).join("");
+  sg.onclick = (ev) => {
+    const b = ev.target.closest("[data-addsugg]");
+    if (!b) return;
+    const [w, r] = pairs[+b.dataset.addsugg];
+    const list = repls();
+    if (!list.some(([x]) => x.toLowerCase() === w.toLowerCase())) list.push([w, r]);
+    setDict(words(), list);
+    b.textContent = "Added"; b.disabled = true;
+    toast(`Vox will now write "${r}"`);
+  };
+}
 $("history").onclick = (ev) => {
+  const f = ev.target.closest("[data-fix]"), l = ev.target.closest("[data-learn]");
+  if (f) return openFix(f.dataset.fix);
+  if (l) return learnFix(l.dataset.learn);
   const c = ev.target.closest("[data-copy]"), d = ev.target.closest("[data-del]");
   if (c) { const e = S.history.find(x => String(x.t) === c.dataset.copy); V.copy(e.text || e.clean); toast("Copied"); }
   if (d) { V.deleteHistory(Number(d.dataset.del)); S.history = S.history.filter(x => String(x.t) !== d.dataset.del); renderHome(); }
