@@ -17,6 +17,7 @@ import requests
 import sounddevice as sd
 from pynput import keyboard
 
+import audio_devices
 import logo
 import vox_core as core
 import vcalendar
@@ -228,8 +229,11 @@ class Engine:
         self.chunks = []
         self.started_at = time.time()
         try:
+            device = audio_devices.input_index(self.cfg.get("input_device"))
+            if self.cfg.get("input_device") and device is None:
+                self.notify("Your chosen microphone is not connected. Using the Windows default one.")
             self.stream = sd.InputStream(samplerate=core.SAMPLE_RATE, channels=1, dtype="int16",
-                                         callback=self._audio)
+                                         device=device, callback=self._audio)
             self.stream.start()
         except Exception as e:
             self.notify(f"Microphone error: {e}")
@@ -277,7 +281,7 @@ class Engine:
             self.set_state("idle")
             return
         if core.is_silent(pcm):
-            self.notify("Vox did not hear anything")
+            self.notify(f"Vox did not hear anything (loudest sound {core.peak_level(pcm)} of 32768). Check the microphone in Vox > Settings.")
             self.set_state("idle")
             return
         self.busy = True

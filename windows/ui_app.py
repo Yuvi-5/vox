@@ -9,6 +9,7 @@ import urllib.request
 import pyperclip
 import webview
 
+import audio_devices
 import meeting
 import vcalendar
 import vox_core as core
@@ -64,6 +65,7 @@ class Api:
                 "saved_min": round(saved_min),
             },
             "apps": apps,
+            "mics": audio_devices.input_names(),
             "autostart": self.get_autostart(),
             "data_dir": core.data_dir(),
         }

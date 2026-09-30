@@ -269,6 +269,7 @@ textarea.mynotes { width: 100%; min-height: 380px; font: inherit; color: var(--t
       <div class="setting"><div><div class="t">Server address</div><div class="d">Groq by default. Point it at your own Whisper/LLM server (for example over Tailscale). Plain http is only allowed for this PC, your local network and Tailscale.</div></div>
         <input type="text" id="base-url" style="width:260px" placeholder="https://api.groq.com/openai/v1"><span class="status" id="url-status"></span></div>
       <div class="setting"><div><div class="t">Dictation shortcut</div><div class="d">Hold to talk and release to insert. Double-tap for hands-free, then press once to finish (Esc cancels).</div></div><select id="hotkey"></select></div>
+      <div class="setting"><div><div class="t">Microphone</div><div class="d">Which microphone Vox listens to. The Windows default unless you pick one. If dictation says it heard nothing, try another.</div></div><select id="mic" style="max-width:260px"></select></div>
       <div class="setting"><div><div class="t">Your name</div><div class="d">Used to label your lines in meeting notes.</div></div><input type="text" id="your-name" style="width:220px" placeholder="e.g. Minhaj"></div>
       <div class="setting"><div><div class="t">Your calendar email</div><div class="d">So you are not listed as an attendee in your own meetings.</div></div><input type="text" id="my-email" style="width:220px" placeholder="you@gmail.com"></div>
       <div class="setting"><div><div class="t">Start notes automatically</div><div class="d">When a calendar meeting with other people starts. Off means Vox reminds you instead.</div></div><label class="switch"><input type="checkbox" id="auto-notes"><span></span></label></div>
@@ -450,6 +451,10 @@ function renderSettings() {
   $("base-url").value = c.base_url || "";
   $("hotkey").innerHTML = S.hotkeys.map(h => `<option value="${h.id}">${h.label}</option>`).join("") + (S.hotkey_id === "custom" ? `<option value="custom">Custom (config.json)</option>` : "");
   $("hotkey").value = S.hotkey_id;
+  const cur = c.input_device || "", mics = (S.mics || []).slice();
+  if (cur && !mics.includes(cur)) mics.push(cur);
+  $("mic").innerHTML = `<option value="">Windows default</option>` + mics.map(m => `<option value="${esc(m)}">${esc(m)}</option>`).join("");
+  $("mic").value = cur;
   $("language").value = c.language || "";
   $("cleanup").checked = c.cleanup !== false;
   $("autostart").checked = S.autostart;
@@ -476,6 +481,7 @@ $("base-url").onchange = async () => {
 };
 $("hotkey").onchange = async (e) => { const label = await api().set_hotkey(e.target.value); if (label) { S.hotkey_id = e.target.value; toast("Shortcut: " + label); } };
 $("language").onchange = (e) => save({ language: e.target.value });
+$("mic").onchange = (e) => save({ input_device: e.target.value }, e.target.value ? "Microphone changed" : "Using the Windows default microphone");
 $("cleanup").onchange = (e) => save({ cleanup: e.target.checked });
 $("autostart").onchange = async (e) => { S.autostart = await api().set_autostart(e.target.checked); e.target.checked = S.autostart; toast(S.autostart ? "Vox will start with Windows" : "Autostart off"); };
 $("stt").onchange = (e) => save({ stt_model: e.target.value.trim() });

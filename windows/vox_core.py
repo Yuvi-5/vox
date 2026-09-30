@@ -30,6 +30,7 @@ DEFAULT_CONFIG = {
     "stt_model": DEFAULT_STT,
     "llm_model": DEFAULT_LLM,
     "language": "",
+    "input_device": "",
     "cleanup": True,
     "keep_history": True,
     "default_style": "neutral",
@@ -277,16 +278,21 @@ def is_silence_hallucination(t):
 
 # --------------------------------------------------------------------- audio
 
-def is_silent(pcm_bytes, threshold=SILENCE_PEAK):
-    """True when a 16-bit mono recording never gets louder than the threshold (nothing was said)."""
+def peak_level(pcm_bytes):
+    """Loudest sample (0 to 32768) of a 16-bit mono recording."""
     n = len(pcm_bytes) // 2
     if n == 0:
-        return True
+        return 0
     samples = array.array("h")
     samples.frombytes(pcm_bytes[: n * 2])
     if sys.byteorder == "big":
         samples.byteswap()
-    return max(max(samples), -min(samples)) < threshold
+    return max(max(samples), -min(samples))
+
+
+def is_silent(pcm_bytes, threshold=SILENCE_PEAK):
+    """True when a 16-bit mono recording never gets louder than the threshold (nothing was said)."""
+    return peak_level(pcm_bytes) < threshold
 
 
 def pcm_to_wav(pcm_bytes):
