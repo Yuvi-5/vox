@@ -468,4 +468,7 @@ class Engine:
         except Exception:
             log.exception("overlay failed to start; running without it")
             threading.Event().wait()
-        self.overlay.run()  # Tk must own the main thread
+        try:
+            self.overlay.run()  # Tk must own the main thread
+        except KeyboardInterrupt:   # Ctrl+C in the terminal: quit properly instead of running on without the pill
+            self.quit()
