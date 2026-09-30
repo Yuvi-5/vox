@@ -185,6 +185,23 @@ public final class GroqClient {
         return t;
     }
 
+    private static final Pattern NEW_PARAGRAPH = Pattern.compile("(?i)[,;:]?\\s*\\bnew paragraph\\b[.,;:!?]?\\s*");
+    private static final Pattern NEW_LINE = Pattern.compile("(?i)[,;:]?\\s*\\bnew line\\b[.,;:!?]?\\s*");
+
+    /**
+     * Turns the spoken words "new paragraph" and "new line" into line breaks. Used when the AI cleanup did
+     * not run, because then nothing else would. Same rules as apply_spoken_commands in windows/vox_core.py.
+     */
+    static String applySpokenCommands(String text) {
+        String t = text == null ? "" : text;
+        t = NEW_PARAGRAPH.matcher(t).replaceAll("\n\n");
+        t = NEW_LINE.matcher(t).replaceAll("\n");
+        int s = 0, e = t.length();
+        while (s < e && t.charAt(s) == ' ') s++;
+        while (e > s && t.charAt(e - 1) == ' ') e--;
+        return t.substring(s, e);
+    }
+
     /** Whisper tends to invent these phrases on silence. */
     static boolean isSilenceHallucination(String t) {
         String s = t.toLowerCase(Locale.ROOT).replaceAll("[^a-z ]", "").trim();

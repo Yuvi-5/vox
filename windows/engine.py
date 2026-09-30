@@ -297,8 +297,11 @@ class Engine:
         secs = len(pcm) / (core.SAMPLE_RATE * 2)
         keep = " Your recording is kept: tray icon > Retry last dictation."
         try:
-            raw, text = core.process(self.cfg, pcm, exe, exe)
+            res = core.process_detailed(self.cfg, pcm, exe, exe)
+            raw, text = res.raw, res.text
             self.pending = None
+            if res.cleanup_error:
+                self.notify("Cleanup did not work, so Vox pasted your words as spoken: " + res.cleanup_error[:120])
             if text:
                 self.paste(text)
                 if self.cfg.get("keep_history", True):

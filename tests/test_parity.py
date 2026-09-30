@@ -51,6 +51,8 @@ def test_golden(kind, f):
         assert "|".join(core.dictionary_terms(cfg)) == f[2]
     elif kind == "prompt":
         assert core.system_prompt(f[0], items(f[1]), f[2]) == f[3]
+    elif kind == "spoken":
+        assert core.apply_spoken_commands(f[0]) == f[1]
     elif kind == "silence":
         assert core.is_silence_hallucination(f[0]) == (f[1] == "true")
     else:

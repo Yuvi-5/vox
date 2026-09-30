@@ -79,6 +79,9 @@ public final class ParityTest {
                 case "prompt":
                     eq(ln, kind, f[3], GroqClient.systemPrompt(f[0], items(f[1], "|"), f[2]));
                     break;
+                case "spoken":
+                    eq(ln, kind, f[1], GroqClient.applySpokenCommands(f[0]));
+                    break;
                 case "silence":
                     eq(ln, kind, f[1], GroqClient.isSilenceHallucination(f[0]) ? "true" : "false");
                     break;

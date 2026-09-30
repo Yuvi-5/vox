@@ -9,6 +9,7 @@ import re
 import sys
 import time
 import wave
+from collections import namedtuple
 from urllib.parse import urlparse
 
 import requests
@@ -247,6 +248,22 @@ def sanitize(text):
     return t
 
 
+_NEW_PARAGRAPH = re.compile(r"[,;:]?\s*\bnew paragraph\b[.,;:!?]?\s*", re.I)
+_NEW_LINE = re.compile(r"[,;:]?\s*\bnew line\b[.,;:!?]?\s*", re.I)
+
+
+def apply_spoken_commands(text):
+    """Turns the spoken words "new paragraph" and "new line" into line breaks.
+
+    Used when the AI cleanup did not run (raw style, cleanup off, or it failed), because then nothing else
+    would do it. The comma Whisper puts before the command and the punctuation after it are dropped;
+    a full stop, ? or ! before it stays.
+    """
+    text = _NEW_PARAGRAPH.sub("\n\n", text or "")
+    text = _NEW_LINE.sub("\n", text)
+    return text.strip(" ")
+
+
 def looks_valid(raw, cleaned):
     return bool(cleaned and cleaned.strip()) and len(cleaned) <= len(raw) * 1.6 + 40
 
@@ -438,21 +455,38 @@ def cleanup(cfg, raw, style, app_label):
     return sanitize(check_response(r)["choices"][0]["message"].get("content", ""))
 
 
-def process(cfg, pcm_bytes, exe, app_label):
-    """Full pipeline. Returns (raw transcript, final text); both '' when nothing was said."""
+Result = namedtuple("Result", "raw text cleaned cleanup_error")
+
+
+def process_detailed(cfg, pcm_bytes, exe, app_label):
+    """Full pipeline. Result.raw and Result.text are '' when nothing was said.
+
+    Result.cleaned says whether the AI cleanup produced the text; Result.cleanup_error holds the reason when
+    cleanup was wanted but failed (the raw transcript is used then, so the dictation is never lost).
+    """
     raw = transcribe(cfg, pcm_to_wav(pcm_bytes))
     if not raw or is_silence_hallucination(raw):
-        return "", ""
+        return Result("", "", False, "")
     style = style_for(cfg, exe)
-    out = raw
+    out, cleaned, error = raw, False, ""
     if cfg.get("cleanup", True) and style != "raw" and len(raw.split()) >= 3:
         try:
             c = cleanup(cfg, raw, style, app_label)
             if looks_valid(raw, c):
-                out = c
-        except (ApiError, requests.RequestException):
-            pass  # keep the raw transcript
-    return raw, apply_replacements(out, replacements(cfg))
+                out, cleaned = c, True
+            else:
+                error = "the cleanup answer looked wrong"
+        except (ApiError, requests.RequestException) as e:
+            error = str(e)
+    if not cleaned:
+        out = apply_spoken_commands(out)
+    return Result(raw, apply_replacements(out, replacements(cfg)), cleaned, error)
+
+
+def process(cfg, pcm_bytes, exe, app_label):
+    """Full pipeline. Returns (raw transcript, final text); both '' when nothing was said."""
+    r = process_detailed(cfg, pcm_bytes, exe, app_label)
+    return r.raw, r.text
 
 
 def check_key(key, base_url=None):

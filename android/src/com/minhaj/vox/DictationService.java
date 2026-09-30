@@ -299,15 +299,20 @@ public class DictationService extends Service {
             }
             String style = p.styleFor(pkg);
             String out = raw;
+            boolean cleaned = false, cleanupFailed = false;
             boolean doClean = p.cleanupEnabled() && !"raw".equals(style) && raw.split("\\s+").length >= 3;
             if (doClean) {
                 try {
                     String c = g.cleanup(raw, style, p.llmModel(), p.dictionaryTerms(), label);
-                    if (GroqClient.looksValid(raw, c)) out = c;
+                    if (GroqClient.looksValid(raw, c)) { out = c; cleaned = true; }
+                    else cleanupFailed = true;
                 } catch (IOException e) {
                     // Cleanup failure should never lose the dictation. Fall back to the raw transcript.
+                    cleanupFailed = true;
                 }
             }
+            if (!cleaned) out = GroqClient.applySpokenCommands(out);
+            if (cleanupFailed) postError("Cleanup did not work, so Vox typed your words as spoken");
             out = GroqClient.applyReplacements(out, p.replacements());
             if (!isCurrent(job)) return;
             p.addHistory(label, raw, out, seconds);
