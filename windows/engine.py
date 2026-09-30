@@ -15,9 +15,10 @@ import pyperclip
 import pystray
 import requests
 import sounddevice as sd
-from PIL import Image, ImageDraw
 from pynput import keyboard
 
+import audio_devices
+import logo
 import vox_core as core
 import vcalendar
 from meeting import Meeting
@@ -44,27 +45,17 @@ MODIFIERS = set().union(*[KEY_ALIASES[k] for k in ("ctrl", "cmd", "alt", "shift"
 
 
 def foreground_app():
-    """Returns (exe name, window title) of the focused window."""
+    """Exe name of the focused window (never its title, which can hold private text)."""
     try:
         user32 = ctypes.windll.user32
         hwnd = user32.GetForegroundWindow()
         pid = ctypes.c_ulong()
         user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
-        length = user32.GetWindowTextLengthW(hwnd)
-        buf = ctypes.create_unicode_buffer(length + 1)
-        user32.GetWindowTextW(hwnd, buf, length + 1)
-        return psutil.Process(pid.value).name(), buf.value
+        return psutil.Process(pid.value).name()
     except Exception:
-        return "", ""
+        return ""
 
 
-def dot(color):
-    img = Image.new("RGBA", (64, 64), (0, 0, 0, 0))
-    ImageDraw.Draw(img).ellipse((6, 6, 58, 58), fill=color)
-    return img
-
-
-import logo
 ICONS = {k: logo.draw(64, k) for k in ("idle", "rec", "busy")}
 
 
@@ -89,9 +80,11 @@ class Engine:
         self.pressed = set()
         self.recording = False
         self.busy = False
+        self.pending = None           # (pcm, exe) of a dictation that could not be sent; kept for Retry
+        self._rec_lock = threading.Lock()
         self.chunks = []
         self.stream = None
-        self.target = ("", "")
+        self.target = ""
         self.started_at = 0.0
         self.state = "idle"   # read by the overlay: idle | rec | busy
         self.level = 0.0
@@ -106,6 +99,7 @@ class Engine:
             "Vox", ICONS["idle"], "Vox",
             menu=pystray.Menu(
                 pystray.MenuItem("Open Vox", lambda *_: open_window(), default=True),
+                pystray.MenuItem("Retry last dictation", self.retry_last, visible=lambda _: self.pending is not None),
                 pystray.MenuItem(lambda _: "Stop meeting notes" if self.meeting.active else "Start meeting notes",
                                  self.toggle_meeting),
                 pystray.MenuItem("Quit Vox", self.quit),
@@ -143,9 +137,21 @@ class Engine:
     # ------------------------------------------------------------------ misc
     def quit(self, *_):
         log.info("quit")
+        m = self.meeting
+        if m.active:
+            m.stop()
+        if m.processing:   # let the meeting notes finish saving instead of losing them
+            self.notify("Saving your meeting notes before quitting...")
+            deadline = time.time() + 180
+            while m.processing and time.time() < deadline:
+                time.sleep(0.5)
         self.icon.stop()
         if self.overlay:
             self.overlay.stop()
+        try:
+            os.remove(os.path.join(core.data_dir(), "engine.json"))   # holds the control token
+        except OSError:
+            pass
         os._exit(0)
 
     def notify(self, msg):
@@ -213,23 +219,28 @@ class Engine:
 
     # ------------------------------------------------------------ recording
     def start(self):
-        if not self.cfg.get("api_key"):
-            self.notify("Add your Groq API key in Vox > Settings")
+        problem = core.endpoint_error(self.cfg) or (
+            "Add your API key in Vox > Settings" if core.key_missing(self.cfg) else "")
+        if problem:
+            self.notify(problem)
             open_window()
             return
         self.target = foreground_app()
         self.chunks = []
         self.started_at = time.time()
         try:
+            device = audio_devices.input_index(self.cfg.get("input_device"))
+            if self.cfg.get("input_device") and device is None:
+                self.notify("Your chosen microphone is not connected. Using the Windows default one.")
             self.stream = sd.InputStream(samplerate=core.SAMPLE_RATE, channels=1, dtype="int16",
-                                         callback=self._audio)
+                                         device=device, callback=self._audio)
             self.stream.start()
         except Exception as e:
             self.notify(f"Microphone error: {e}")
             return
         self.recording = True
         self.set_state("rec")
-        log.info("recording started (app=%s)", self.target[0])
+        log.info("recording started (app=%s)", self.target)
 
     def _audio(self, indata, frames, t, status):
         self.chunks.append(bytes(indata))
@@ -246,50 +257,74 @@ class Engine:
         except Exception:
             pass
 
+    def _end_recording(self):
+        """Atomically leaves the recording state; False when it had already ended (the audio callback and
+        the hotkey can both ask to stop)."""
+        with self._rec_lock:
+            if not self.recording:
+                return False
+            self.recording = False
+            self.hands_free = False
+        self._close_stream()
+        return True
+
     def cancel(self):
         """Discard the current recording."""
-        if not self.recording:
-            return
-        self.recording = False
-        self.hands_free = False
-        self._close_stream()
-        self.set_state("idle")
+        if self._end_recording():
+            self.set_state("idle")
 
     def stop(self):
-        if not self.recording:
+        if not self._end_recording():
             return
-        self.recording = False
-        self.hands_free = False
-        self._close_stream()
         pcm = b"".join(self.chunks)
         if len(pcm) < core.SAMPLE_RATE * 2 * MIN_SECONDS:
             self.set_state("idle")
             return
+        if core.is_silent(pcm):
+            self.notify(f"Vox did not hear anything (loudest sound {core.peak_level(pcm)} of 32768). Check the microphone in Vox > Settings.")
+            self.set_state("idle")
+            return
         self.busy = True
         self.set_state("busy")
-        threading.Thread(target=self._process, args=(pcm,), daemon=True).start()
+        threading.Thread(target=self._process, args=(pcm, self.target), daemon=True).start()
 
-    def _process(self, pcm):
-        exe, title = self.target
+    def retry_last(self, *_):
+        """Sends again the last recording that could not be sent."""
+        if self.busy or self.recording or self.pending is None:
+            return
+        pcm, exe = self.pending
+        self.busy = True
+        self.set_state("busy")
+        threading.Thread(target=self._process, args=(pcm, exe), daemon=True).start()
+
+    def _process(self, pcm, exe):
         secs = len(pcm) / (core.SAMPLE_RATE * 2)
+        keep = " Your recording is kept: tray icon > Retry last dictation."
         try:
-            raw, text = core.process(self.cfg, pcm, exe, title or exe)
+            res = core.process_detailed(self.cfg, pcm, exe, exe)
+            raw, text = res.raw, res.text
+            self.pending = None
+            if res.cleanup_error:
+                self.notify("Cleanup did not work, so Vox pasted your words as spoken: " + res.cleanup_error[:120])
             if text:
                 self.paste(text)
-                core.add_history({
-                    "t": time.time(), "app": exe, "title": title[:120], "raw": raw, "text": text,
-                    "words": len(text.split()), "secs": round(secs, 1),
-                })
-        except core.GroqError as e:
-            log.error("groq error: %s", e)
+                if self.cfg.get("keep_history", True):
+                    core.add_history({
+                        "t": time.time(), "app": exe, "raw": raw, "text": text,
+                        "words": len(text.split()), "secs": round(secs, 1),
+                    })
+        except core.ApiError as e:
+            log.error("api error: %s", e)
+            self.pending = (pcm, exe)
             if e.code == 401:
-                self.notify("Groq rejected the API key. Check Vox > Settings.")
+                self.notify("The server rejected the API key. Check Vox > Settings." + keep)
             elif e.code == 429:
-                self.notify("Groq free limit reached. Try again shortly.")
+                self.notify("Rate limit reached. Try again shortly." + keep)
             else:
-                self.notify(str(e))
+                self.notify(str(e) + keep)
         except requests.RequestException as e:
-            self.notify(f"Network error: {e}")
+            self.pending = (pcm, exe)
+            self.notify(f"Network error: {e}." + keep)
         except Exception:
             log.exception("processing failed")
         finally:
@@ -412,7 +447,7 @@ class Engine:
                     return self._send(500, {"error": str(e)})
 
         srv = ThreadingHTTPServer(("127.0.0.1", 0), H)
-        with open(os.path.join(core.data_dir(), "engine.json"), "w") as f:
+        with open(os.path.join(core.data_dir(), "engine.json"), "w", encoding="utf-8") as f:
             json.dump({"port": srv.server_address[1], "token": token, "pid": os.getpid()}, f)
         srv.serve_forever()
 
@@ -426,11 +461,14 @@ class Engine:
         threading.Thread(target=self._watch_calendar, daemon=True, name="calendar").start()
         self.icon.run_detached()
         log.info("engine started, hotkey=%s", self.cfg.get("hotkey"))
-        if not self.cfg.get("api_key"):
+        if core.key_missing(self.cfg) or core.endpoint_error(self.cfg):
             open_window()
         try:
             self.overlay = Overlay(self)
         except Exception:
             log.exception("overlay failed to start; running without it")
             threading.Event().wait()
-        self.overlay.run()  # Tk must own the main thread
+        try:
+            self.overlay.run()  # Tk must own the main thread
+        except KeyboardInterrupt:   # Ctrl+C in the terminal: quit properly instead of running on without the pill
+            self.quit()

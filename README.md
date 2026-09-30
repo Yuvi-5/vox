@@ -99,14 +99,24 @@ Groq's free plan (per key, per day, at the time of writing):
 | AI cleanup | 1,000 requests | About 1,000 cleaned dictations a day. After that Vox still pastes the raw transcript |
 | Meeting notes | 1,000 requests, 200K tokens | A 1-hour meeting uses about 2 hours of live audio quota, plus the final accurate pass on whisper-large-v3 |
 
+## 7b. Use your own server instead of Groq (optional)
+
+Vox talks to any OpenAI-compatible speech and chat server. Open **Settings**, and set:
+
+- **Server address**, for example `http://100.x.y.z:8000/v1` (a Whisper server such as faster-whisper-server on your own PC, reached over Tailscale) or `https://your-host/v1`. Leave it empty for Groq.
+- **Speech model** and **Cleanup model** (Settings, Advanced) to the model names your server offers.
+- **API key**: leave it empty if your server does not need one.
+
+Plain `http://` is only accepted for this PC, your local network and Tailscale addresses (100.64.0.0/10, `*.ts.net`). Any other server must use `https://`, so your key and voice never cross the internet unencrypted. The **Test** button checks the address and key together. On Android the same fields are in Settings → API key → Server address.
+
 ## 8. Troubleshooting
 
 | Problem | Fix |
 |---|---|
 | Nothing happens when I hold Ctrl + Win | Check the tray icon is there. If not, start Vox from the Start menu |
 | Pill appears but no text is pasted | Click into a text box first. Vox cannot type into apps running as administrator |
-| "Groq rejected the API key" | Settings → paste the key again → **Test** |
-| "Groq free limit reached" | Wait a few minutes (per-minute limit) or until tomorrow (daily limit) |
+| "The server rejected the API key" | Settings → paste the key again → **Test** |
+| "Rate limit reached" (Groq free limit) | Wait a few minutes (per-minute limit) or until tomorrow (daily limit) |
 | Wrong words for names or terms | Add them in **Dictionary**, or add a replacement |
 | Words in the wrong language | Settings → **Language** → pick your language instead of Auto detect |
 | Another app also uses Ctrl + Win (e.g. Wispr Flow) | Change the shortcut in Vox Settings, or in the other app |

@@ -57,6 +57,14 @@ public class VoxAccessibilityService extends AccessibilityService implements Dic
         return super.onUnbind(intent);
     }
 
+    @Override
+    public void onDestroy() {
+        removeBubble();
+        instance = null;
+        DictationService.setListener(null);
+        super.onDestroy();
+    }
+
     @Override public void onInterrupt() { }
 
     // ------------------------------------------------------------- events
@@ -80,7 +88,17 @@ public class VoxAccessibilityService extends AccessibilityService implements Dic
         }
     }
 
+    @SuppressWarnings("deprecation")
+    private void releaseEditNode() {
+        AccessibilityNodeInfo old = editNode;
+        editNode = null;
+        if (old != null && Build.VERSION.SDK_INT < 33) {
+            try { old.recycle(); } catch (Exception ignored) { }
+        }
+    }
+
     private void setEditNode(AccessibilityNodeInfo n) {
+        if (editNode != null && editNode != n) releaseEditNode();
         editNode = n;
         CharSequence p = n.getPackageName();
         if (p != null) editPkg = p.toString();
@@ -91,7 +109,7 @@ public class VoxAccessibilityService extends AccessibilityService implements Dic
         AccessibilityNodeInfo f = null;
         try { f = findFocus(AccessibilityNodeInfo.FOCUS_INPUT); } catch (Exception ignored) { }
         if (f != null && f.isEditable()) setEditNode(f);
-        else { editNode = null; refreshVisibility(); }
+        else { releaseEditNode(); refreshVisibility(); }
     }
 
     public void refreshVisibility() {
@@ -99,8 +117,12 @@ public class VoxAccessibilityService extends AccessibilityService implements Dic
         boolean busy = DictationService.instance != null
                 && DictationService.instance.getState() != DictationService.IDLE;
         boolean want = busy || !new Prefs(this).onlyWhenTyping() || editNode != null;
-        if (want && !bubbleShown) { wm.addView(bubble, lp); bubbleShown = true; }
-        else if (!want && bubbleShown) { wm.removeView(bubble); bubbleShown = false; }
+        try {
+            if (want && !bubbleShown) { wm.addView(bubble, lp); bubbleShown = true; }
+            else if (!want && bubbleShown) { wm.removeView(bubble); bubbleShown = false; }
+        } catch (Exception e) {
+            bubbleShown = false; // the window manager refused (service going away, overlay revoked)
+        }
     }
 
     // ------------------------------------------------------------- bubble
@@ -195,6 +217,10 @@ public class VoxAccessibilityService extends AccessibilityService implements Dic
         }
         switch (svc.getState()) {
             case DictationService.IDLE:
+                if (isPasswordField(editNode)) {
+                    toast("Vox does not type into password fields");
+                    break;
+                }
                 bubble.performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY);
                 svc.startRecording(editPkg, appLabel(editPkg));
                 break;
@@ -247,7 +273,7 @@ public class VoxAccessibilityService extends AccessibilityService implements Dic
 
     @Override
     public void onResult(String text, String targetPkg) {
-        insertText(text);
+        insertText(text, targetPkg);
     }
 
     @Override
@@ -257,7 +283,11 @@ public class VoxAccessibilityService extends AccessibilityService implements Dic
 
     // ------------------------------------------------------------ insertion
 
-    private void insertText(String text) {
+    static boolean isPasswordField(AccessibilityNodeInfo n) {
+        return n != null && n.isPassword();
+    }
+
+    private void insertText(String text, String targetPkg) {
         AccessibilityNodeInfo node = null;
         try { node = findFocus(AccessibilityNodeInfo.FOCUS_INPUT); } catch (Exception ignored) { }
         if (node == null || !node.isEditable()) {
@@ -267,6 +297,17 @@ public class VoxAccessibilityService extends AccessibilityService implements Dic
         if (node == null) {
             copyToClipboard(text);
             toast("No text field found. Copied to clipboard.");
+            return;
+        }
+        if (isPasswordField(node)) {
+            toast("Vox does not type into password fields");
+            return;
+        }
+        CharSequence nodePkg = node.getPackageName();
+        if (targetPkg != null && nodePkg != null && !targetPkg.contentEquals(nodePkg)) {
+            // The user switched apps while Vox was working: do not type into the wrong one.
+            copyToClipboard(text);
+            toast("You switched apps. Dictation copied to clipboard.");
             return;
         }
 

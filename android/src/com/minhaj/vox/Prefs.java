@@ -38,6 +38,10 @@ public final class Prefs {
     }
 
     public String apiKey() { return sp.getString("api_key", "").trim(); }
+    /** Server address; Groq unless the user set their own. */
+    public String baseUrl() { return nonEmpty(Endpoint.normalize(sp.getString("base_url", "")), GroqClient.DEFAULT_BASE); }
+    /** True when Groq is the server and no key is set. A server of your own may need no key. */
+    public boolean keyMissing() { return apiKey().isEmpty() && baseUrl().equals(GroqClient.DEFAULT_BASE); }
     public String sttModel() { return nonEmpty(sp.getString("stt_model", ""), DEFAULT_STT_MODEL); }
     public String llmModel() { return nonEmpty(sp.getString("llm_model", ""), DEFAULT_LLM_MODEL); }
     public String language() { return sp.getString("language", "").trim(); }
@@ -45,6 +49,8 @@ public final class Prefs {
     public String peopleRaw() { return sp.getString("people", ""); }
     public String appStylesRaw() { return sp.getString("app_styles", DEFAULT_APP_STYLES); }
     public String defaultStyle() { return nonEmpty(sp.getString("default_style", ""), "neutral"); }
+    /** When false, nothing dictated is saved on the phone. */
+    public boolean keepHistory() { return sp.getBoolean("keep_history", true); }
     public boolean cleanupEnabled() { return sp.getBoolean("cleanup", true); }
     public boolean onlyWhenTyping() { return sp.getBoolean("only_typing", true); }
     public int bubbleX() { return sp.getInt("bubble_x", -1); }
@@ -58,35 +64,12 @@ public final class Prefs {
 
     /** Plain dictionary terms (lines without "=>"). */
     public List<String> dictionaryTerms() {
-        List<String> out = new ArrayList<>();
-        for (String line : peopleRaw().split("\n")) {
-            String l = line.trim();
-            if (!l.isEmpty() && !l.startsWith("#") && !out.contains(l)) out.add(l);
-        }
-        for (String line : dictionaryRaw().split("\n")) {
-            String l = line.trim();
-            if (l.isEmpty() || l.startsWith("#")) continue;
-            if (l.contains("=>")) {
-                String right = l.substring(l.indexOf("=>") + 2).trim();
-                if (!right.isEmpty()) out.add(right);
-            } else {
-                out.add(l);
-            }
-        }
-        return out;
+        return Terms.terms(peopleRaw(), dictionaryRaw());
     }
 
     /** Forced replacements from lines of the form "wrong => right". */
     public Map<String, String> replacements() {
-        Map<String, String> out = new LinkedHashMap<>();
-        for (String line : dictionaryRaw().split("\n")) {
-            String l = line.trim();
-            if (l.startsWith("#") || !l.contains("=>")) continue;
-            String wrong = l.substring(0, l.indexOf("=>")).trim();
-            String right = l.substring(l.indexOf("=>") + 2).trim();
-            if (!wrong.isEmpty()) out.put(wrong, right);
-        }
-        return out;
+        return Terms.replacements(dictionaryRaw());
     }
 
     /** Style for a package name, falling back to the default style. */
@@ -106,6 +89,7 @@ public final class Prefs {
     // ---- history ----
 
     public void addHistory(String app, String raw, String clean, double secs) {
+        if (!keepHistory()) return;
         try {
             JSONArray arr = new JSONArray(sp.getString("history", "[]"));
             JSONObject o = new JSONObject();

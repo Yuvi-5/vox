@@ -9,6 +9,7 @@ import urllib.request
 import pyperclip
 import webview
 
+import audio_devices
 import meeting
 import vcalendar
 import vox_core as core
@@ -64,6 +65,7 @@ class Api:
                 "saved_min": round(saved_min),
             },
             "apps": apps,
+            "mics": audio_devices.input_names(),
             "autostart": self.get_autostart(),
             "data_dir": core.data_dir(),
         }
@@ -75,6 +77,10 @@ class Api:
         core.save_config(merged)
         return True
 
+    def endpoint_problem(self, base_url):
+        """Text to show under the server address field, or '' when the address is acceptable."""
+        return core.endpoint_error({"base_url": base_url})
+
     def set_hotkey(self, hid):
         for h in HOTKEYS:
             if h["id"] == hid:
@@ -82,12 +88,22 @@ class Api:
                 return h["label"]
         return None
 
-    def check_key(self, key):
+    def check_key(self, key, base_url=None):
+        """True/False when the server answers; None when it cannot be reached or the address is refused."""
         try:
-            return core.check_key(key.strip())
+            if base_url is None:
+                base_url = core.load_config().get("base_url")
+            if core.endpoint_error({"base_url": base_url}):
+                return None
+            return core.check_key(key.strip(), base_url)
         except Exception as e:
             log.warning("key check failed: %s", e)
             return None
+
+    def suggest_corrections(self, original, edited):
+        """Replacements found by comparing a dictation with the user's fixed version, minus ones already saved."""
+        known = {w.lower() for w in core.replacements(core.load_config())}
+        return [[w, r] for w, r in core.suggest_corrections(original, edited) if w.lower() not in known]
 
     def copy(self, text):
         pyperclip.copy(text)
@@ -112,7 +128,7 @@ class Api:
     # ------------------------------------------------------------ meetings
     def _engine(self, path, body=None):
         try:
-            with open(os.path.join(core.data_dir(), "engine.json")) as f:
+            with open(os.path.join(core.data_dir(), "engine.json"), encoding="utf-8") as f:
                 info = json.load(f)
             req = urllib.request.Request(f"http://127.0.0.1:{info['port']}{path}", method="POST",
                                          data=json.dumps(body or {}).encode(),

@@ -1,26 +1,38 @@
 """Platform-independent parts of Vox: config, Groq calls, prompt, text post-processing."""
+import array
+import difflib
 import io
+import ipaddress
 import json
 import os
 import re
 import sys
 import time
 import wave
+from collections import namedtuple
+from urllib.parse import urlparse
 
 import requests
+
+import secret
 
 BASE = "https://api.groq.com/openai/v1"
 DEFAULT_STT = "whisper-large-v3-turbo"
 DEFAULT_LLM = "openai/gpt-oss-20b"
 SAMPLE_RATE = 16000
+SILENCE_PEAK = 655          # 16-bit peak (about -34 dBFS) below which a recording is treated as silence
+RETRY_STATUS = (500, 502, 503, 504)   # server trouble worth retrying; 429 is left to the callers
 
 DEFAULT_CONFIG = {
     "api_key": "",
+    "base_url": BASE,
     "hotkey": ["ctrl_l", "cmd"],
     "stt_model": DEFAULT_STT,
     "llm_model": DEFAULT_LLM,
     "language": "",
+    "input_device": "",
     "cleanup": True,
+    "keep_history": True,
     "default_style": "neutral",
     "dictionary": [],
     "people": [],
@@ -57,10 +69,12 @@ def config_path():
 
 
 def save_config(cfg):
+    """Writes the settings; the API key is stored protected by the Windows login (see secret.py)."""
     path = config_path()
     tmp = path + ".tmp"
+    on_disk = dict(cfg, api_key=secret.protect(cfg.get("api_key") or ""))
     with open(tmp, "w", encoding="utf-8") as f:
-        json.dump(cfg, f, indent=2)
+        json.dump(on_disk, f, indent=2)
     os.replace(tmp, path)
 
 
@@ -107,6 +121,10 @@ def load_config():
         cfg = json.load(f)
     merged = dict(DEFAULT_CONFIG)
     merged.update(cfg)
+    stored = merged.get("api_key") or ""
+    merged["api_key"] = secret.unprotect(stored)
+    if stored and not secret.is_protected(stored) and secret.available():
+        save_config(merged)   # a key typed into config.json by hand: protect it from now on
     return merged
 
 
@@ -125,6 +143,33 @@ def dictionary_terms(cfg):
         else:
             out.append(line)
     return list(dict.fromkeys(out))
+
+
+_EDGE_PUNCT = ".,;:!?\"'()[]{}"
+
+
+def suggest_corrections(original, edited, max_words=3):
+    """Word replacements the user made when fixing a dictation, as [(wrong, right), ...] for the dictionary.
+
+    Only swaps of up to `max_words` words are suggested (added or removed words are not replacements).
+    A change of capital letters alone is skipped at the start of a sentence, where it is just grammar.
+    """
+    a_raw, b_raw = (original or "").split(), (edited or "").split()
+    a = [t.strip(_EDGE_PUNCT) for t in a_raw]
+    b = [t.strip(_EDGE_PUNCT) for t in b_raw]
+    out = []
+    for op, i1, i2, j1, j2 in difflib.SequenceMatcher(None, a, b, autojunk=False).get_opcodes():
+        if op != "replace" or i2 - i1 > max_words or j2 - j1 > max_words:
+            continue
+        wrong, right = " ".join(a[i1:i2]).strip(), " ".join(b[j1:j2]).strip()
+        if len(wrong) < 2 or not right or wrong == right:
+            continue
+        starts_sentence = i1 == 0 or a_raw[i1 - 1][-1:] in ".?!"
+        if wrong.lower() == right.lower() and starts_sentence:
+            continue
+        if (wrong, right) not in out:
+            out.append((wrong, right))
+    return out
 
 
 def replacements(cfg):
@@ -180,7 +225,7 @@ def system_prompt(style, terms, app_label):
     ]
     if terms:
         rules.append("- Spell these names and terms exactly as written: " + ", ".join(terms[:150]) + ".")
-    rules.append("- Style: " + STYLE_TEXT.get(style, "neutral. Standard capitalization and punctuation."))
+    rules.append("- Style: " + STYLE_TEXT.get((style or "").lower(), "neutral. Standard capitalization and punctuation."))
     text = "\n".join(rules) + "\n"
     if app_label:
         text += f"\nThe text will be typed into the app: {app_label}.\n"
@@ -204,6 +249,22 @@ def sanitize(text):
     return t
 
 
+_NEW_PARAGRAPH = re.compile(r"[,;:]?\s*\bnew paragraph\b[.,;:!?]?\s*", re.I)
+_NEW_LINE = re.compile(r"[,;:]?\s*\bnew line\b[.,;:!?]?\s*", re.I)
+
+
+def apply_spoken_commands(text):
+    """Turns the spoken words "new paragraph" and "new line" into line breaks.
+
+    Used when the AI cleanup did not run (raw style, cleanup off, or it failed), because then nothing else
+    would do it. The comma Whisper puts before the command and the punctuation after it are dropped;
+    a full stop, ? or ! before it stays.
+    """
+    text = _NEW_PARAGRAPH.sub("\n\n", text or "")
+    text = _NEW_LINE.sub("\n", text)
+    return text.strip(" ")
+
+
 def looks_valid(raw, cleaned):
     return bool(cleaned and cleaned.strip()) and len(cleaned) <= len(raw) * 1.6 + 40
 
@@ -217,6 +278,23 @@ def is_silence_hallucination(t):
 
 # --------------------------------------------------------------------- audio
 
+def peak_level(pcm_bytes):
+    """Loudest sample (0 to 32768) of a 16-bit mono recording."""
+    n = len(pcm_bytes) // 2
+    if n == 0:
+        return 0
+    samples = array.array("h")
+    samples.frombytes(pcm_bytes[: n * 2])
+    if sys.byteorder == "big":
+        samples.byteswap()
+    return max(max(samples), -min(samples))
+
+
+def is_silent(pcm_bytes, threshold=SILENCE_PEAK):
+    """True when a 16-bit mono recording never gets louder than the threshold (nothing was said)."""
+    return peak_level(pcm_bytes) < threshold
+
+
 def pcm_to_wav(pcm_bytes):
     buf = io.BytesIO()
     with wave.open(buf, "wb") as w:
@@ -229,35 +307,86 @@ def pcm_to_wav(pcm_bytes):
 
 # ---------------------------------------------------------------------- groq
 
-class GroqError(Exception):
+class ApiError(Exception):
+    """The speech or cleanup server answered with an error status."""
+
     def __init__(self, code, msg):
         super().__init__(msg)
         self.code = code
 
 
-def _post(url, retries=2, **kw):
-    """POST with a quick retry on dropped connections (flaky Wi-Fi, VPNs, antivirus TLS inspection)."""
+def post_with_retry(url, retries=2, **kw):
+    """POST with a quick retry on dropped connections (flaky Wi-Fi, VPNs, antivirus TLS inspection)
+    and on temporary server errors (500, 502, 503, 504). The last response is returned as it is."""
     for attempt in range(retries + 1):
         try:
             if "files" in kw:   # file objects must be re-sent from the start
                 for name, spec in kw["files"].items():
                     if hasattr(spec[1], "seek"):
                         spec[1].seek(0)
-            return requests.post(url, **kw)
+            r = requests.post(url, **kw)
         except (requests.ConnectionError, requests.Timeout):
             if attempt == retries:
                 raise
-            time.sleep(0.7 * (attempt + 1))
+        else:
+            if r.status_code not in RETRY_STATUS or attempt == retries:
+                return r
+        time.sleep(0.7 * (attempt + 1))
 
 
-def _check(r):
+def api_base(cfg):
+    """Base URL of the OpenAI-compatible API. Blank falls back to Groq."""
+    return (cfg.get("base_url") or "").strip().rstrip("/") or BASE
+
+
+def auth_headers(cfg):
+    """Authorization header, or none when no key is set (some self-hosted servers need no key)."""
+    key = (cfg.get("api_key") or "").strip()
+    return {"Authorization": f"Bearer {key}"} if key else {}
+
+
+def check_response(r):
     if r.status_code >= 400:
         try:
             msg = r.json()["error"]["message"]
         except Exception:
             msg = r.text
-        raise GroqError(r.status_code, f"Groq {r.status_code}: {msg}")
+        raise ApiError(r.status_code, f"API {r.status_code}: {msg}")
     return r.json()
+
+
+def is_private_host(host):
+    """True for addresses where plain http is acceptable: this PC, the home/office LAN and Tailscale."""
+    host = (host or "").strip("[]").lower().rstrip(".")
+    if not host:
+        return False
+    try:
+        ip = ipaddress.ip_address(host)
+    except ValueError:
+        # A name: single-label names, .local/.lan and Tailscale MagicDNS names never leave the private network.
+        return "." not in host or host.endswith((".local", ".lan", ".ts.net"))
+    return ip.is_loopback or ip.is_private or ip.is_link_local or ip in ipaddress.ip_network("100.64.0.0/10")
+
+
+def endpoint_error(cfg):
+    """Why the configured endpoint cannot be used, or '' when it is fine.
+
+    The API key and your voice go to this address, so plain http is only allowed for private hosts.
+    """
+    url = (cfg.get("base_url") or "").strip()
+    if not url:
+        return ""
+    u = urlparse(url)
+    if u.scheme not in ("http", "https") or not u.hostname:
+        return "The server address must start with http:// or https://"
+    if u.scheme == "http" and not is_private_host(u.hostname):
+        return "Plain http is only allowed for this PC, your local network or Tailscale. Use https:// for other servers."
+    return ""
+
+
+def key_missing(cfg):
+    """True when Groq is the endpoint and no key is set. A self-hosted server may need no key."""
+    return not (cfg.get("api_key") or "").strip() and api_base(cfg) == BASE
 
 
 def transcribe(cfg, wav_bytes):
@@ -267,14 +396,14 @@ def transcribe(cfg, wav_bytes):
     prompt = whisper_prompt(dictionary_terms(cfg))
     if prompt:
         data["prompt"] = prompt
-    r = _post(
-        f"{BASE}/audio/transcriptions",
-        headers={"Authorization": f"Bearer {cfg['api_key']}"},
+    r = post_with_retry(
+        f"{api_base(cfg)}/audio/transcriptions",
+        headers=auth_headers(cfg),
         data=data,
         files={"file": ("audio.wav", wav_bytes, "audio/wav")},
         timeout=60,
     )
-    return _check(r).get("text", "").strip()
+    return check_response(r).get("text", "").strip()
 
 
 def transcribe_segments(cfg, wav_bytes, prompt=None, model=None):
@@ -288,14 +417,14 @@ def transcribe_segments(cfg, wav_bytes, prompt=None, model=None):
         data["language"] = cfg["language"]
     if prompt:
         data["prompt"] = prompt[-800:]
-    r = _post(
-        f"{BASE}/audio/transcriptions",
-        headers={"Authorization": f"Bearer {cfg['api_key']}"},
+    r = post_with_retry(
+        f"{api_base(cfg)}/audio/transcriptions",
+        headers=auth_headers(cfg),
         data=data,
         files={"file": ("audio.wav", wav_bytes, "audio/wav")},
         timeout=180,
     )
-    res = _check(r)
+    res = check_response(r)
     segs = res.get("segments") or []
     if not segs and res.get("text"):
         return [{"start": 0.0, "end": 0.0, "text": res["text"].strip(), "logprob": 0.0, "no_speech": 0.0, "compression": 1.0}]
@@ -323,33 +452,50 @@ def cleanup(cfg, raw, style, app_label):
     if "gpt-oss" in model:
         body["reasoning_effort"] = "low"
         body["include_reasoning"] = False
-    r = _post(
-        f"{BASE}/chat/completions",
-        headers={"Authorization": f"Bearer {cfg['api_key']}"},
+    r = post_with_retry(
+        f"{api_base(cfg)}/chat/completions",
+        headers=auth_headers(cfg),
         json=body,
         timeout=60,
     )
-    return sanitize(_check(r)["choices"][0]["message"].get("content", ""))
+    return sanitize(check_response(r)["choices"][0]["message"].get("content", ""))
 
 
-def process(cfg, pcm_bytes, exe, app_label):
-    """Full pipeline. Returns (raw transcript, final text); both '' when nothing was said."""
+Result = namedtuple("Result", "raw text cleaned cleanup_error")
+
+
+def process_detailed(cfg, pcm_bytes, exe, app_label):
+    """Full pipeline. Result.raw and Result.text are '' when nothing was said.
+
+    Result.cleaned says whether the AI cleanup produced the text; Result.cleanup_error holds the reason when
+    cleanup was wanted but failed (the raw transcript is used then, so the dictation is never lost).
+    """
     raw = transcribe(cfg, pcm_to_wav(pcm_bytes))
     if not raw or is_silence_hallucination(raw):
-        return "", ""
+        return Result("", "", False, "")
     style = style_for(cfg, exe)
-    out = raw
+    out, cleaned, error = raw, False, ""
     if cfg.get("cleanup", True) and style != "raw" and len(raw.split()) >= 3:
         try:
             c = cleanup(cfg, raw, style, app_label)
             if looks_valid(raw, c):
-                out = c
-        except (GroqError, requests.RequestException):
-            pass  # keep the raw transcript
-    return raw, apply_replacements(out, replacements(cfg))
+                out, cleaned = c, True
+            else:
+                error = "the cleanup answer looked wrong"
+        except (ApiError, requests.RequestException) as e:
+            error = str(e)
+    if not cleaned:
+        out = apply_spoken_commands(out)
+    return Result(raw, apply_replacements(out, replacements(cfg)), cleaned, error)
 
 
-def check_key(key):
-    """True when Groq accepts the key."""
-    r = requests.get(f"{BASE}/models", headers={"Authorization": f"Bearer {key}"}, timeout=15)
+def process(cfg, pcm_bytes, exe, app_label):
+    """Full pipeline. Returns (raw transcript, final text); both '' when nothing was said."""
+    r = process_detailed(cfg, pcm_bytes, exe, app_label)
+    return r.raw, r.text
+
+
+def check_key(key, base_url=None):
+    """True when the API accepts the key (Groq unless base_url is given)."""
+    r = requests.get(f"{api_base({'base_url': base_url})}/models", headers=auth_headers({"api_key": key}), timeout=15)
     return r.status_code == 200

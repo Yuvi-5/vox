@@ -63,9 +63,9 @@ def _llm(cfg, system, user, max_tokens=4096, effort="medium"):
     if "gpt-oss" in model:
         body["reasoning_effort"] = effort
         body["include_reasoning"] = False
-    r = core._post(f"{core.BASE}/chat/completions", headers={"Authorization": f"Bearer {cfg['api_key']}"},
+    r = core.post_with_retry(f"{core.api_base(cfg)}/chat/completions", headers=core.auth_headers(cfg),
                    json=body, timeout=240)
-    return core.sanitize(core._check(r)["choices"][0]["message"].get("content", ""))
+    return core.sanitize(core.check_response(r)["choices"][0]["message"].get("content", ""))
 
 
 # --------------------------------------------------------------------- prompts
@@ -242,6 +242,7 @@ class Meeting:
         self.event = None          # calendar event dict or None
         self.qa = []               # live questions and answers
         self.lock = threading.Lock()
+        self.ctl = threading.Lock()      # start and stop can come from the tray, the window and the calendar at once
         self._last_call = 0.0
 
     # ------------------------------------------------------------ status
@@ -268,12 +269,17 @@ class Meeting:
 
     # ------------------------------------------------------------- control
     def start(self, event=None):
+        with self.ctl:
+            return self._start(event)
+
+    def _start(self, event=None):
         if self.active or self.processing:
             return False
         import soundcard as sc
         cfg = self.get_cfg()
-        if not cfg.get("api_key"):
-            self.last_error = "Add your Groq API key first"
+        problem = core.endpoint_error(cfg) or ("Add your API key first" if core.key_missing(cfg) else "")
+        if problem:
+            self.last_error = problem
             return False
         self.id = datetime.now().strftime("%Y%m%d-%H%M%S")
         self.started = time.time()
@@ -306,6 +312,10 @@ class Meeting:
 
     def stop(self):
         """Stops recording; the slow final pass and notes run in a thread."""
+        with self.ctl:
+            return self._stop()
+
+    def _stop(self):
         if not self.active:
             return False
         self.active = False
@@ -334,8 +344,8 @@ class Meeting:
             try:
                 self._pace()
                 return core.transcribe_segments(self.get_cfg(), core.pcm_to_wav(pcm), prompt=prompt, model=model)
-            except core.GroqError as e:
-                self.last_error = "Groq rate limit, catching up..." if e.code == 429 else str(e)
+            except core.ApiError as e:
+                self.last_error = "Rate limit, catching up..." if e.code == 429 else str(e)
                 log.warning("stt failed (%s), retry %s", e, attempt)
                 time.sleep(6 * (attempt + 1) if e.code == 429 else 3)
             except requests.RequestException as e:
@@ -420,8 +430,9 @@ class Meeting:
                         span = next((sp for sp in spans if sp[0] <= t < sp[1] + 0.4), spans[-1])
                         got.append({"t": round(span[2] + max(0.0, t - span[0])), "who": s.who, "text": sg["text"]})
             final.extend(got if ok and got else live)
-        self.entries = []
-        self._add(sorted(final, key=lambda e: e["t"]))
+        with self.lock:   # status() reads the entries from other threads
+            self.entries = []
+            self._add(sorted(final, key=lambda e: e["t"]))
 
     # -------------------------------------------------------------- labels
     def _me(self):

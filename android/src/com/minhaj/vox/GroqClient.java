@@ -19,9 +19,9 @@ import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-/** Groq (OpenAI-compatible) speech-to-text and text cleanup. */
+/** Speech-to-text and text cleanup over an OpenAI-compatible API (Groq by default, or a server of your own). */
 public final class GroqClient {
-    private static final String BASE = "https://api.groq.com/openai/v1";
+    public static final String DEFAULT_BASE = "https://api.groq.com/openai/v1";
 
     public static class ApiException extends IOException {
         public final int code;
@@ -29,15 +29,20 @@ public final class GroqClient {
     }
 
     private final String apiKey;
+    private final String base;
 
-    public GroqClient(String apiKey) { this.apiKey = apiKey; }
+    public GroqClient(String apiKey, String baseUrl) {
+        this.apiKey = apiKey == null ? "" : apiKey.trim();
+        String b = Endpoint.normalize(baseUrl);
+        this.base = b.isEmpty() ? DEFAULT_BASE : b;
+    }
 
     /** True when Groq accepts the key, false when it rejects it. Throws on network errors. */
     public boolean checkKey() throws IOException {
-        HttpURLConnection c = (HttpURLConnection) new URL(BASE + "/models").openConnection();
+        HttpURLConnection c = (HttpURLConnection) new URL(base + "/models").openConnection();
         c.setConnectTimeout(15000);
         c.setReadTimeout(15000);
-        c.setRequestProperty("Authorization", "Bearer " + apiKey);
+        if (!apiKey.isEmpty()) c.setRequestProperty("Authorization", "Bearer " + apiKey);
         int code = c.getResponseCode();
         c.disconnect();
         return code == 200;
@@ -47,7 +52,7 @@ public final class GroqClient {
 
     public String transcribe(File wav, String model, String language, List<String> terms) throws IOException {
         String boundary = "----vox" + System.nanoTime();
-        HttpURLConnection c = open(BASE + "/audio/transcriptions");
+        HttpURLConnection c = open(base + "/audio/transcriptions");
         c.setRequestProperty("Content-Type", "multipart/form-data; boundary=" + boundary);
         c.setDoOutput(true);
         c.setChunkedStreamingMode(0);
@@ -111,7 +116,7 @@ public final class GroqClient {
         } catch (Exception e) {
             throw new IOException(e);
         }
-        HttpURLConnection c = open(BASE + "/chat/completions");
+        HttpURLConnection c = open(base + "/chat/completions");
         c.setRequestProperty("Content-Type", "application/json");
         c.setDoOutput(true);
         try (OutputStream out = c.getOutputStream()) {
@@ -180,6 +185,39 @@ public final class GroqClient {
         return t;
     }
 
+    private static final Pattern NEW_PARAGRAPH = Pattern.compile("(?i)[,;:]?\\s*\\bnew paragraph\\b[.,;:!?]?\\s*");
+    private static final Pattern NEW_LINE = Pattern.compile("(?i)[,;:]?\\s*\\bnew line\\b[.,;:!?]?\\s*");
+
+    /**
+     * Turns the spoken words "new paragraph" and "new line" into line breaks. Used when the AI cleanup did
+     * not run, because then nothing else would. Same rules as apply_spoken_commands in windows/vox_core.py.
+     */
+    static String applySpokenCommands(String text) {
+        String t = text == null ? "" : text;
+        t = NEW_PARAGRAPH.matcher(t).replaceAll("\n\n");
+        t = NEW_LINE.matcher(t).replaceAll("\n");
+        int s = 0, e = t.length();
+        while (s < e && t.charAt(s) == ' ') s++;
+        while (e > s && t.charAt(e - 1) == ' ') e--;
+        return t.substring(s, e);
+    }
+
+    /** Whisper tends to invent these phrases on silence. */
+    static boolean isSilenceHallucination(String t) {
+        String s = t.toLowerCase(Locale.ROOT).replaceAll("[^a-z ]", "").trim();
+        return s.equals("thank you") || s.equals("thanks for watching") || s.equals("you")
+                || s.equals("thank you for watching") || s.equals("bye");
+    }
+
+    /** True when trying the same request again could succeed (server trouble, rate limit, dropped connection). */
+    static boolean isRetryable(IOException e) {
+        if (e instanceof ApiException) {
+            int c = ((ApiException) e).code;
+            return c >= 500 || c == 429 || c == 408;
+        }
+        return true;
+    }
+
     /** Guards against the model replying to the transcript instead of cleaning it. */
     static boolean looksValid(String raw, String cleaned) {
         if (cleaned == null || cleaned.trim().isEmpty()) return false;
@@ -190,7 +228,7 @@ public final class GroqClient {
     static String applyReplacements(String text, Map<String, String> repl) {
         String out = text;
         for (Map.Entry<String, String> e : repl.entrySet()) {
-            Pattern p = Pattern.compile("(?i)(?<![\\p{L}\\p{N}])" + Pattern.quote(e.getKey()) + "(?![\\p{L}\\p{N}])");
+            Pattern p = Pattern.compile("(?iu)(?<![\\p{L}\\p{N}_])" + Pattern.quote(e.getKey()) + "(?![\\p{L}\\p{N}_])");
             out = p.matcher(out).replaceAll(Matcher.quoteReplacement(e.getValue()));
         }
         return out;
@@ -199,11 +237,13 @@ public final class GroqClient {
     // ---------------------------------------------------------------- http
 
     private HttpURLConnection open(String url) throws IOException {
+        String problem = Endpoint.error(base);
+        if (problem != null) throw new IOException(problem);
         HttpURLConnection c = (HttpURLConnection) new URL(url).openConnection();
         c.setRequestMethod("POST");
         c.setConnectTimeout(15000);
         c.setReadTimeout(60000);
-        c.setRequestProperty("Authorization", "Bearer " + apiKey);
+        if (!apiKey.isEmpty()) c.setRequestProperty("Authorization", "Bearer " + apiKey);
         return c;
     }
 
@@ -216,10 +256,10 @@ public final class GroqClient {
             String msg = body;
             try { msg = new JSONObject(body).getJSONObject("error").optString("message", body); }
             catch (Exception ignored) { }
-            throw new ApiException(code, "Groq " + code + ": " + msg);
+            throw new ApiException(code, "API " + code + ": " + msg);
         }
         try { return new JSONObject(body); }
-        catch (Exception e) { throw new IOException("Bad JSON from Groq"); }
+        catch (Exception e) { throw new IOException("Bad JSON from the server"); }
     }
 
     private static String readAll(InputStream in) throws IOException {

@@ -58,7 +58,7 @@ public class MainActivity extends Activity {
         WebSettings s = web.getSettings();
         s.setJavaScriptEnabled(true);
         s.setDomStorageEnabled(true);
-        s.setAllowFileAccess(true);
+        s.setAllowFileAccess(false);   // the UI is loaded from assets, which does not need file access
         web.setWebChromeClient(new WebChromeClient());
         web.setWebViewClient(new WebViewClient());
         web.addJavascriptInterface(new Bridge(), "Vox");
@@ -115,8 +115,10 @@ public class MainActivity extends Activity {
                 JSONObject o = new JSONObject();
                 JSONObject cfg = new JSONObject();
                 cfg.put("api_key", prefs.apiKey());
+                cfg.put("base_url", prefs.baseUrl());
                 cfg.put("language", prefs.language());
                 cfg.put("cleanup", prefs.cleanupEnabled());
+                cfg.put("keep_history", prefs.keepHistory());
                 cfg.put("only_typing", prefs.onlyWhenTyping());
                 cfg.put("default_style", prefs.defaultStyle());
                 cfg.put("stt_model", prefs.sttModel());
@@ -143,8 +145,12 @@ public class MainActivity extends Activity {
                 JSONObject c = new JSONObject(json);
                 android.content.SharedPreferences.Editor e = prefs.edit();
                 if (c.has("api_key")) e.putString("api_key", c.getString("api_key").trim());
+                if (c.has("base_url") && Endpoint.error(c.getString("base_url")) == null) {
+                    e.putString("base_url", Endpoint.normalize(c.getString("base_url")));
+                }
                 if (c.has("language")) e.putString("language", c.getString("language"));
                 if (c.has("cleanup")) e.putBoolean("cleanup", c.getBoolean("cleanup"));
+                if (c.has("keep_history")) e.putBoolean("keep_history", c.getBoolean("keep_history"));
                 if (c.has("only_typing")) e.putBoolean("only_typing", c.getBoolean("only_typing"));
                 if (c.has("default_style")) e.putString("default_style", c.getString("default_style"));
                 if (c.has("stt_model")) e.putString("stt_model", c.getString("stt_model"));
@@ -204,13 +210,30 @@ public class MainActivity extends Activity {
         }
 
         @JavascriptInterface
-        public void testKey(String key, String callback) {
+        public void testKey(String key, String baseUrl, String callback) {
             new Thread(() -> {
                 String res;
-                try { res = new GroqClient(key.trim()).checkKey() ? "ok" : "bad"; }
+                try { res = new GroqClient(key.trim(), baseUrl).checkKey() ? "ok" : "bad"; }
                 catch (Exception e) { res = "offline"; }
                 js(callback + "('" + res + "')");
             }).start();
+        }
+
+        /** Word swaps found between a dictation and the user's fixed version, as JSON [[wrong, right], ...]. */
+        @JavascriptInterface
+        public String suggestCorrections(String original, String edited) {
+            JSONArray arr = new JSONArray();
+            for (String[] p : Corrections.suggest(original, edited, 3)) {
+                arr.put(new JSONArray().put(p[0]).put(p[1]));
+            }
+            return arr.toString();
+        }
+
+        /** Empty when the server address is acceptable, otherwise the reason it is not. */
+        @JavascriptInterface
+        public String endpointProblem(String baseUrl) {
+            String p = Endpoint.error(baseUrl);
+            return p == null ? "" : p;
         }
 
         @JavascriptInterface

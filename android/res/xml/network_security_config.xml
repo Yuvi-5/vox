@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Android cannot list address ranges here, so http is switched on for the whole app.
+  The app itself refuses plain http unless the server is on this phone, the local network or Tailscale
+  (see Endpoint.java), so the API key and your voice never travel unencrypted over the internet.
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="true" />
+</network-security-config>
